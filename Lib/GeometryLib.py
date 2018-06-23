@@ -59,16 +59,20 @@ class Segment(object):
         return True if (np.abs(np.cross(norm(v1 % v2), norm(v3 % v4))) <= eps).all() else False
 
     def intersect(self, that):
-        if not isinstance(self, Segment) and not isinstance(that, Segment):
-            raise TypeError()
-        if not Segment.in_same_plane(self, that):
-            return None
-        x0, y0, z0 = self.start_point
-        x1, y1, z1 = that.start_point
-        a0, b0, c0 = self.vector
-        a1, b1, c1 = that.vector
-        t0 = ((y0 - y1) * a1 - (x0 - x1) * b1) / (a0 * b1 - b0 * a1)
-        return np.array([t0 * a0 + x0, t0 * b0 + y0, t0 * c0 + z0]) if 0 <= t0 <= 1 else None
+        if isinstance(that, Segment):
+            if not Segment.in_same_plane(self, that):
+                return None
+            x0, y0, z0 = self.start_point
+            x1, y1, z1 = that.start_point
+            a0, b0, c0 = self.vector
+            a1, b1, c1 = that.vector
+            t0 = ((y0 - y1) * a1 - (x0 - x1) * b1) / (a0 * b1 - b0 * a1)
+            return np.array([t0 * a0 + x0, t0 * b0 + y0, t0 * c0 + z0]) if 0 <= t0 <= 1 else None
+        elif isinstance(that, Plane):
+            nor_ver = that.normal_vector
+            t1 = (-that.z_ - np.dot(nor_ver, np.array(self.start_point))) / np.dot(nor_ver, nor_ver)
+            t2 = (-that.z_ - np.dot(nor_ver, np.array(self.end_point))) / np.dot(nor_ver, nor_ver)
+            return self.intersect(Segment(self.start_point + nor_ver * t1, self.end_point + nor_ver * t2))
 
     def __mod__(self, other):
         if not isinstance(other, Segment):
@@ -90,13 +94,23 @@ class Plane(object):
         :param points: np.ndarray, points must be in same plane
         """
         self.points = points
-        # self.hull = ConvexHull(points)
-        # if len(self.hull.simplices) != points.shape[0] + 1:
-        #     raise ValueError()
+        n = points.shape[0]
+        if n < 3:
+            raise ValueError("at least 3 points are needed")
         line1 = points[1] - points[0]
-        line2 = points[2] - points[1]
+        line2 = points[2] - points[0]
+        temp = 3
+        while temp < n and ((np.abs(norm(line1) - norm(line2)) < 1e-5).all() or
+                            (np.abs(norm(line1) + norm(line2)) < 1e-5).all()):
+            line2 = points[temp] - points[0]
+            temp += 1
+        if temp == n:
+            raise ValueError("all points shouldn't be in one line")
         self.normal_vector = norm(np.cross(line1, line2))
-        self.z_ = -self.normal_vector * points[0]
+        for i in range(3, n):
+            if (np.abs(np.dot(self.normal_vector, norm(points[i] - points[0]))) >= 1e-5).any():
+                raise ValueError("all points should be in a same plane")
+        self.z_ = -np.dot(self.normal_vector, points[0])
 
 
 class Range(object):
@@ -141,8 +155,8 @@ class Polyhedron(object):
         ranges = [Range(dis[simplex1], dis[simplex2])
                   for simplex1, simplex2 in zip(self.hull.simplices[:-1], self.hull.simplices[1:])]
         intersect_points = list()
-        for r in ranges:
-            if r.start * r.end <= 0:
+        # for r in ranges:
+        #     if r.start * r.end <= 0:
 
         # TODO(suyako): 求出多面体与平面的交点
 
