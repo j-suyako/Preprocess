@@ -14,10 +14,10 @@ def plot_segment(figure=None):
 
 def plot_plane():
     fig = plt.figure()
-    for i in range(16):
-        ax = fig.add_subplot(4, 4, i + 1, projection='3d')
+    for i in range(9):
+        ax = fig.add_subplot(3, 3, i + 1, projection='3d')
         nor_vor = np.random.random(3)
-        z_ = np.random.random()
+        z_ = -np.random.random()
         points_x_y = np.random.random((10, 2))
         points_z = (-z_ - np.dot(points_x_y, nor_vor[:2])) / nor_vor[-1]
         points = np.column_stack((points_x_y, points_z))
@@ -37,23 +37,45 @@ def plot_plane():
 
 
 def plot_poly(figure=None):
-    # points = np.random.random((8, 3))
-    points = np.array([[0, 0, 0],
-                       [0, 1, 0],
-                       [1, 1, 0],
-                       [1, 0, 0],
-                       [0.5, 0.5, 0.5]])
+    points = np.random.random((8, 3))
+    # points = np.array([[0, 0, 0],
+    #                    [0, 1, 0],
+    #                    [1, 1, 0],
+    #                    [1, 0, 0],
+    #                    [0.5, 0.5, 0.5]])
     poly = Polyhedron(points)
     poly.plot(figure)
 
 
+def plot_cutting_poly(figure=None):
+    points = np.array([[0, 0, 0],
+                       [0, 1, 0],
+                       [1, 1, 0],
+                       [1, 0, 0],
+                       [0, 0, 1],
+                       [0, 1, 1],
+                       [1, 1, 1],
+                       [1, 0, 1]])
+    poly = Polyhedron(points)
+    nor_vor = np.random.random(3)
+    z_ = -np.random.random()
+    points_x_y = np.random.random((10, 2))
+    points_z = (-z_ - np.dot(points_x_y, nor_vor[:2])) / nor_vor[-1]
+    plane_points = np.column_stack((points_x_y, points_z))
+    plane = Plane(plane_points)
+    above, down = poly.cutting(plane)
+    above.plot(figure)
+    down.plot(figure)
+
+
 if __name__ == '__main__':
     # fig = plt.figure()
-    # ax1 = fig.add_subplot(121, projection='3d')
+    # ax = fig.add_subplot(111, projection='3d')
     # plot_segment(ax1)
     # ax2 = fig.add_subplot(122, projection='3d')
-    # plot_poly()
+    # plot_cutting_poly(ax)
     plot_plane()
+    # plot_poly()
     plt.show()
     # fig = plt.figure()
     # ax = fig.gca(projection='3d')
