@@ -3,7 +3,10 @@ from matplotlib.path import Path
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D, art3d
 import numpy as np
-from scipy.spatial import ConvexHull, Voronoi
+from scipy.spatial import ConvexHull, Voronoi, Delaunay
+
+
+INFINITY = np.array([np.inf, np.inf, np.inf])
 
 
 def norm(x):
@@ -42,6 +45,15 @@ class Segment(object):
         self.end_point = end_point
         self.vector = end_point - start_point
 
+    def takepoint(self, p, axis: str):
+        """取改线段所在直线上的一点"""
+        axis = axis.lower()
+        axs = ['x', 'y', 'z']
+        if axis not in axs:
+            raise ValueError()
+        index = axs.index(axis)
+        return (p - self.start_point[index]) / self.vector[index] * self.vector + self.start_point
+
     @staticmethod
     def in_same_plane(this, that, eps=1e-5):
         if not isinstance(this, Segment) and not isinstance(that, Segment):
@@ -64,10 +76,6 @@ class Segment(object):
                 return None
             if np.abs(angel(self.vector, that.vector)) < 1e-5:
                 return None
-            # x0, y0, z0 = self.start_point
-            # x1, y1, z1 = that.start_point
-            # a0, b0, c0 = self.vector
-            # a1, b1, c1 = that.vector
             temp = np.r_[self.vector, -that.vector].reshape(2, 3).T
             index = list()
             for e in [[0, 1], [0, 2]]:
@@ -119,54 +127,54 @@ class Plane(object):
         :param points: np.ndarray, points must be in same plane
         """
         pass
-        # if points is not None:
-        #     self.points = points
-        #     n = points.shape[0]
-        #     if n < 3:
-        #         raise ValueError("at least 3 points are needed")
-        #     lines = (points - points[0])[1:]
-        #     line0 = lines[0]
-        #     for line1 in lines[1:]:
-        #         if (np.abs(norm(line0) - norm(line1)) < 1e-5).all() or (np.abs(norm(line0) + norm(line1)) < 1e-5).all():
-        #             continue
-        #         else:
-        #             break
-        #     else:
-        #         raise ValueError("all points shouldn't be in one line")
-        #     # TODO: one line circumstance
-        #     self.normal_vector = norm(np.cross(line0, lines[1]))
-        #     for i in range(3):
-        #         if self.normal_vector[i] == 0:
-        #             continue
-        #         elif self.normal_vector[i] < 0:
-        #             self.normal_vector *= -1
-        #             break
-        #         else:
-        #             break
-        #     for i in range(3, n):
-        #         if (np.abs(np.dot(self.normal_vector, norm(points[i] - points[0]))) >= 1e-5).any():
-        #             raise ValueError("all points should be in a same plane")
-        #     self.z_ = -np.dot(self.normal_vector, points[0])
-        #     a, b, c = list(map(lambda x: float('%.5f' % x), self.normal_vector))
-        #     self.feature = (a, b, c, float('%.5f' % self.z_))
-        #     center = np.sum(points, 0) / points.shape[0]
-        #     relative_points = points - center
-        #     theta1 = angel(self.normal_vector[:2], np.array([0, 1]))
-        #     normal_vector_after_rotate = rotate_z(self.normal_vector, theta1)
-        #     theta2 = angel(normal_vector_after_rotate[1:], np.array([0, 1]))
-        #     relative_points = rotate_z(relative_points, theta1)
-        #     relative_points = rotate_x(relative_points, theta2)
-        #     self.hull = ConvexHull(relative_points[:, :2])
-        #     index = self.hull.vertices
-        #     self.segments = [Segment(points[start], points[end]) for start, end in
-        #                      zip(index, np.append(index[1:], index[0]))]
-        # else:
-        #     if normal_vector is None or z_ is None:
-        #         raise ValueError("a plane is decided by its normal vector and its constant term.")
-        #     self.normal_vector = normal_vector
-        #     self.z_ = z_
-        #     a, b, c = list(map(lambda x: float('%.5f' % x), self.normal_vector))
-        #     self.feature = (a, b, c, float('%.5f' % self.z_))
+        if points is not None:
+            self.points = points
+            n = points.shape[0]
+            if n < 3:
+                raise ValueError("at least 3 points are needed")
+            lines = (points - points[0])[1:]
+            line0 = lines[0]
+            for line1 in lines[1:]:
+                if (np.abs(norm(line0) - norm(line1)) < 1e-5).all() or (np.abs(norm(line0) + norm(line1)) < 1e-5).all():
+                    continue
+                else:
+                    break
+            else:
+                raise ValueError("all points shouldn't be in one line")
+            # TODO: one line circumstance
+            self.normal_vector = norm(np.cross(line0, lines[1]))
+            for i in range(3):
+                if self.normal_vector[i] == 0:
+                    continue
+                elif self.normal_vector[i] < 0:
+                    self.normal_vector *= -1
+                    break
+                else:
+                    break
+            for i in range(3, n):
+                if (np.abs(np.dot(self.normal_vector, norm(points[i] - points[0]))) >= 1e-5).any():
+                    raise ValueError("all points should be in a same plane")
+            self.z_ = -np.dot(self.normal_vector, points[0])
+            a, b, c = list(map(lambda x: float('%.5f' % x), self.normal_vector))
+            self.feature = (a, b, c, float('%.5f' % self.z_))
+            center = np.sum(points, 0) / points.shape[0]
+            relative_points = points - center
+            theta1 = angel(self.normal_vector[:2], np.array([0, 1]))
+            normal_vector_after_rotate = rotate_z(self.normal_vector, theta1)
+            theta2 = angel(normal_vector_after_rotate[1:], np.array([0, 1]))
+            relative_points = rotate_z(relative_points, theta1)
+            relative_points = rotate_x(relative_points, theta2)
+            self.hull = ConvexHull(relative_points[:, :2])
+            index = self.hull.vertices
+            self.segments = [Segment(points[start], points[end]) for start, end in
+                             zip(index, np.append(index[1:], index[0]))]
+        else:
+            if normal_vector is None or z_ is None:
+                raise ValueError("a plane is decided by its normal vector and its constant term.")
+            self.normal_vector = normal_vector
+            self.z_ = z_
+            a, b, c = list(map(lambda x: float('%.5f' % x), self.normal_vector))
+            self.feature = (a, b, c, float('%.5f' % self.z_))
 
     def get_loc(self, x=None, y=None, z=None):
         if x is None and y is None and z is None:
@@ -273,6 +281,9 @@ class Polyhedron(object):
                 raise ValueError("only 3d points are accepted")
             self.points = points
             self.hull = ConvexHull(points)
+            self.volume = self.hull.volume
+            tera = Delaunay(self.hull.points)
+
             plane_feature_dic = dict()  # key值为平面的法向量及常数项构成的集合，value为{ points }中属于该平面上的点的索引
             for index in self.hull.simplices:
                 feature = Plane(points[index]).feature
