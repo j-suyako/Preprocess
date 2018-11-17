@@ -1,4 +1,4 @@
-from Lib.GeometryLib import *
+from lib.simple3D import *
 
 if __name__ == '__main__':
     plt.figure(figsize=(20, 15))
@@ -11,7 +11,7 @@ if __name__ == '__main__':
                        [0.72458681, 0.1604321, 0.33335469]])
     poly = Polyhedron(points)
     normal_vector = np.array([0, 0, 1])
-    constant = np.linspace(-poly.z_range.end, -poly.z_range.start, 50)
+    constant = np.linspace(-poly.range[2][1], -poly.range[2][0], 50)
     ax1 = plt.subplot2grid((2, 3), (0, 0), rowspan=2, colspan=2, projection='3d')
     ax1.axis('off')
     ax2 = plt.subplot2grid((2, 3), (0, 2), projection='3d')
@@ -20,15 +20,19 @@ if __name__ == '__main__':
     ax3.axis('off')
     poly.plot(ax1)
     for e in constant:
-        plane = Plane(normal_vector=normal_vector, z_=e)
+        plane = InfinitePlane(normal_vector=normal_vector, intercept=e)
         figplane = plane.plot(ax1)
-        _, intersect, _ = poly.intersect(plane)
         # figintersect = ax1.scatter(intersect[:, 0], intersect[:, 1], intersect[:, 2], marker='x')
-        above, down = poly.cutting(plane)
+        num, polys = poly.cutby(plane)
+        if num == 1:
+            ax1.patches.pop()
+            continue
+        above, down = polys
         above.plot(ax2)
         down.plot(ax3)
         plt.pause(0.01)
-        ax1.patches.remove(figplane)
+        # ax1.patches.remove(figplane)
+        ax1.patches.pop()
         # ax1.collections.remove(figintersect)
         while len(ax2.patches):
             ax2.patches.pop()

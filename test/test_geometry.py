@@ -1,8 +1,6 @@
 import unittest
-
-from Lib.GeometryLib import *
+from lib.simple3D import *
 import numpy as np
-from scipy.spatial import Voronoi
 
 
 class TestGeometry(unittest.TestCase):
@@ -71,9 +69,9 @@ class TestGeometry(unittest.TestCase):
         k1, k2 = 1 + 2 * np.random.random(2)
         line1_end = line1_start + k1 * vector1
         line2_end = line2_start + k2 * vector2
-        segment1 = Segment(line1_start, line1_end)
-        segment2 = Segment(line2_start, line2_end)
-        self.assertTrue((np.abs(Segment.intersect(segment1, segment2) - points[0]) < 1e-5).all())
+        segment1 = Line(line1_start, line1_end)
+        segment2 = Line(line2_start, line2_end)
+        self.assertTrue((np.abs(Line.intersect(segment1, segment2) - points[0]) < 1e-5).all())
 
     def test_intersect2(self):
         """检测直线与平面的相交点
@@ -94,8 +92,24 @@ class TestGeometry(unittest.TestCase):
         point_inter = point_start + t1 / (t1 + t2) * (point_end - point_start)
         segment_start = point_start + t1 * nor_vor
         segment_end = point_end - t2 * nor_vor
-        segment = Segment(segment_start, segment_end)
-        self.assertTrue((np.abs(segment.intersect(plane) - point_inter) < 1e-5).all())
+        segment = Line(segment_start, segment_end)
+        self.assertTrue((np.abs(plane.intersect(segment) - point_inter) < 1e-5).all())
+
+    def test_plane_are(self):
+        points = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]])
+        plane = FinitePlane(points)
+        self.assertTrue(np.abs(plane.area() - 1) < 1e-5)
+
+    def test_plane_contains_point(self):
+        # TODO: not important
+        pass
+
+    def test_poly_init(self):
+        points = np.array([[0.546475, 0.20281369, 0.7953809],
+                           [0.38601218, 0.231787, 0.80042051],
+                           [0.46292967, 0.22748123, 0.73912268],
+                           [0.5187505, 0.21515927, 0.75115156]])
+        poly = Polyhedron(points)
 
     #
     # def test_polyhedron(self):

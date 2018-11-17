@@ -1,7 +1,7 @@
 """
 这个demo展示如何生成一个多面体
 """
-from Lib.GeometryLib import *
+from lib.simple3D import *
 
 if __name__ == '__main__':
     # 在空间中生成任意8个点
