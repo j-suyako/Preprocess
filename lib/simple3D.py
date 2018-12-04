@@ -5,12 +5,16 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D, art3d
 import matplotlib.patches as patches
 from matplotlib.path import Path
-from util.math import norm, angel, rotate_x, rotate_z
+from util.math import norm, angel, rotate_x, rotate_z, ridge_renum
 
 
 class Line(object):
 
-    def __init__(self, start_point, end_point):
+    def __init__(self, start_point: iter, end_point: iter):
+        if not isinstance(start_point, np.ndarray):
+            start_point = np.array(list(start_point))
+        if not isinstance(end_point, np.ndarray):
+            end_point = np.array(list(end_point))
         self.start_point = start_point
         self.end_point = end_point
         self.vector = end_point - start_point
@@ -37,6 +41,13 @@ class Line(object):
                 return True
         v1, v2, v3, v4 = v
         return True if (np.abs(np.cross(norm(v1 % v2), norm(v3 % v4))) <= eps).all() else False
+
+    def contains(self, point):
+        vec = point - self.start_point
+        t = np.around(np.cross(vec, self.vector), 5)
+        if np.sqrt(np.dot(t, t)) < 1e-5:
+            return True
+        return False
 
     def intersect(self, that):
         if isinstance(that, Line):
@@ -171,14 +182,21 @@ class Plane(object):
         else:
             return np.array([self.dis_to(point) for point in points])
 
-    def contains(self, point, error=1e-5):
+    def project(self, points: np.ndarray):
+        if len(points.shape) == 1:
+            dis = self.dis_to(points)
+            return self.normal_vector * dis + points
+        else:
+            return np.array([list(self.project(point)) for point in points])
+
+    def contains(self, points, error=1e-5):
         """judge if point in this plane
 
-        :param point: np.array, target point
+        :param points: np.array, target point
         :param error: float, allowable error
         :return: boolean, true or false
         """
-        if np.abs(np.dot(self.normal_vector, point) + self.intercept) > error:
+        if np.abs(np.dot(self.normal_vector, points) + self.intercept) > error:
             return False
         return True
 
@@ -329,27 +347,30 @@ class FinitePlane(Plane):
 
         return area
 
-    def contains(self, point, error=1e-5):
+    def contains(self, points, error=1e-5):
         """
         judge if point in this plane
-        :param point: np.array, target point
+        :param points: np.array, target point
         :param error: float, allowable error
         :return: boolean, true or false
         """
-        if super(FinitePlane, self).contains(point, error):
-            bound_points = self.points[self.ridge]
-            edge_vectors = bound_points - point
+        if len(points.shape) == 1:
+            if super(FinitePlane, self).contains(points, error):
+                bound_points = self.points[self.ridge]
+                edge_vectors = bound_points - points
 
-            area = 0
-            for i in range(edge_vectors.shape[0]):
-                start, end = i, i + 1 if i < edge_vectors.shape[0] - 1 else 0
-                cross = np.cross(edge_vectors[start], edge_vectors[end])
-                area += np.abs(np.sqrt(np.dot(cross, cross))) / 2
+                area = 0
+                for i in range(edge_vectors.shape[0]):
+                    start, end = i, i + 1 if i < edge_vectors.shape[0] - 1 else 0
+                    cross = np.cross(edge_vectors[start], edge_vectors[end])
+                    area += np.abs(np.sqrt(np.dot(cross, cross))) / 2
 
-            if abs(area - self.area()) < 1e-5:
-                return True
+                if abs(area - self.area()) < 1e-5:
+                    return True
 
-        return False
+            return False
+        else:
+            return [self.contains(point) for point in points]
 
     def intersect(self, line: Line):
         intersect_point = super(FinitePlane, self).intersect(line)
@@ -498,39 +519,49 @@ class Polyhedron(object):
         else:
             pass
 
-    def _intersect_line(self, line: Line):
-        pass  # TODO: poly intersect with line
+    def _intersect_line(self, line: Line, return_key=False):
+        points = list()
+        key = list()
+        for r in self.ridge:
+            plane = FinitePlane(self.points[r], list(range(len(r))))
+            point = plane.intersect(line=line)
+            if point is not None and plane.contains(point):
+                points.append(list(point))
+                key.append(tuple(r))
+        if return_key:
+            return np.array(points), key
+        return np.array(points)
 
-    def _intersect_plane(self, plane: Plane):
-        dis_array = np.around(plane.dis_to(self.points), 5)
-        if np.all(dis_array >= 0):
-            return self.points, np.array([]), np.array([])
-        elif np.all(dis_array <= 0):
-            return np.array([]), np.array([]), self.points
-        else:
-            above_points = self.points[dis_array > 0]
-            down_points = self.points[dis_array < 0]
+    def _intersect_plane(self, plane: Plane, dis_array=None, return_key=False):
+        if dis_array is None:
+            dis_array = np.around(plane.dis_to(self.points), 5)
+        if np.all(dis_array >= 0) or np.all(dis_array <= 0):
+            return np.array([])
+        # intersect_points = [list(e) for e in self.points[dis_array == 0] if plane.contains(e)]
+        intersect_points = list()
+        key = list()
+        for start, end in self._decre_ridge():
+            if dis_array[start] * dis_array[end] < 0:
+                vector = self.points[end] - self.points[start]
+                intersect_point = self.points[start] + vector * abs(dis_array[start]) / \
+                                  (abs(dis_array[start]) + abs(dis_array[end]))
+                if plane.contains(intersect_point):
+                    intersect_points.append(list(intersect_point))
+                    key.append((start, end))
 
-            intersect_points = [list(e) for e in self.points[dis_array == 0] if plane.contains(e)]
-            for start, end in self._decre_ridge():
-                if dis_array[start] * dis_array[end] < 0:
-                    vector = self.points[end] - self.points[start]
-                    intersect_point = self.points[start] + vector * abs(dis_array[start]) / \
-                                      (abs(dis_array[start]) + abs(dis_array[end]))
-                    if plane.contains(intersect_point):
-                        intersect_points.append(list(intersect_point))
-
-            intersect_points = np.array(intersect_points)
-            return above_points, intersect_points, down_points
+        intersect_points = np.array(intersect_points)
+        if return_key:
+            return intersect_points, key
+        return intersect_points
 
     def _intersect_poly(self, poly):
         pass
 
-    def intersect(self, that):
+    def intersect(self, that, return_key=False):
         if isinstance(that, Line):
-            return self._intersect_line(that)
+            return self._intersect_line(that, return_key=return_key)
         elif isinstance(that, Plane):
-            return self._intersect_plane(that)
+            return self._intersect_plane(that, return_key=return_key)
         elif isinstance(that, Polyhedron):
             return self._intersect_poly(that)
 
@@ -540,14 +571,62 @@ class Polyhedron(object):
         :param plane:
         :return:
         """
-        above_points, intersect_points, down_points = self._intersect_plane(plane)
+        dis_array = np.around(plane.dis_to(self.points), 5)
+        if np.all(dis_array >= 0):
+            return self, None
+        elif np.all(dis_array <= 0):
+            return None, self
+        else:
+            above_points = self.points[dis_array > 0]
+            down_points = self.points[dis_array < 0]
+            intersect_points, key = self._intersect_plane(plane, dis_array=dis_array, return_key=True)
 
-        above_points = np.vstack((above_points, intersect_points)) if intersect_points.size != 0 else above_points
-        down_points = np.vstack((down_points, intersect_points)) if intersect_points.size != 0 else down_points
+            n = self.points.shape[0]
+            mapping = dict(zip(key, list(range(n, n + len(key)))))
+            # try:
+            #     index = 0
+            #     for start, end in self._decre_ridge():
+            #         if index == m:
+            #             break
+            #         if Line(self.points[start], self.points[end]).contains(intersect_points[index]):
+            #             mapping[(start, end)] = n + index
+            #             index += 1
+            # except IndexError:
+            #     raise ValueError()
 
-        above_poly = Polyhedron(above_points) if above_points.size != 0 else None
-        down_poly = Polyhedron(down_points) if down_points.size != 0 else None
-        return above_poly, down_poly
+            ridge = [[], []]
+            for r in self.ridge:
+                flag = list()
+                new_r = list()
+                for i in range(len(r)):
+                    start, end = i, i + 1 if i < len(r) - 1 else 0
+                    minr, maxr = (r[start], r[end]) if r[start] < r[end] else (r[end], r[start])
+                    new_r.append(r[start])
+                    if (minr, maxr) in mapping:
+                        flag.append(start)
+                        new_r.append(mapping[(minr, maxr)])
+                if len(flag) < 2:
+                    ridge[0 if dis_array[r[0]] > 0 else 1].append(r)
+                else:
+                    r0, r1 = new_r[:flag[0] + 2] + new_r[flag[1] + 2:], new_r[flag[0] + 1:flag[1] + 3]
+                    if dis_array[r[0]] < 0:
+                        r0, r1 = r1, r0
+                    ridge[0].append(r0)
+                    ridge[1].append(r1)
+
+            r = [e + n for e in FinitePlane(intersect_points).ridge]
+            ridge[0].append(r)
+            ridge[1].append(r)
+
+            above_points = np.vstack((above_points, intersect_points))
+            down_points = np.vstack((down_points, intersect_points))
+
+            # r.sort()
+            above_index = list(np.arange(n)[dis_array > 0]) + list(range(n, n + len(r)))
+            down_index = list(np.arange(n)[dis_array < 0]) + list(range(n, n + len(r)))
+            above_poly = Polyhedron(above_points, ridge=ridge_renum(above_index, ridge=ridge[0]))
+            down_poly = Polyhedron(down_points, ridge=ridge_renum(down_index, ridge=ridge[1]))
+            return above_poly, down_poly
 
     def _cutby_poly(self, poly):
         pass  # TODO: poly cut by poly
@@ -577,13 +656,28 @@ class Polyhedron(object):
 
 
 if __name__ == '__main__':
-    points = np.array([[6.87367166e+02, 1.28042991e+02, 4.73669208e+02],
-                       [6.81583964e+02, 1.11807859e+02, 4.60171483e+02],
-                       [6.81753523e+02, 0.00000000e+00, 4.68846065e+02],
-                       [7.20471169e+02, 1.05114096e+02, 5.59475051e+02],
-                       [7.19229594e+02, -1.42108547e-14, 5.64070487e+02]])
+    points = np.array([[656.62857, 103.78734, 851.54812],
+                       [628.15485, 121.24006, 880.991],
+                       [645.44918, 0.0, 846.10231],
+                       [676.43643, 94.32469, 853.48044],
+                       [676.3464, 0.0, 849.70551],
+                       [710.88475, 0.0, 900.0],
+                       [708.65324, 84.11734, 900.0],
+                       [588.1006, 0.0, 900.0],
+                       [630.44643, 122.3901, 900.0],
+                       [606.40179, 111.90331, 900.0]])
+    ridge = [[5, 4, 3, 6], [5, 4, 2, 7], [8, 1, 0, 3, 6], [2, 0, 3, 4], [9, 1, 8], [7, 2, 0, 1, 9], [5, 6, 7, 8, 9]]
     poly = Polyhedron(points)
-    fig = Axes3D(plt.figure())
-    attribute = {"alpha": 0.2, "color": (0.42, 0.1, 0.05)}
-    poly.plot(fig, **attribute)
+    plane = FinitePlane(points=np.array([[680, 0, 400],
+                                         [680, 0, 900],
+                                         [680, 240, 400],
+                                         [680, 240, 900]]))
+    ax1 = plt.subplot2grid((1, 2), (0, 0), projection="3d")
+    ax2 = plt.subplot2grid((1, 2), (0, 1), projection="3d")
+    attribute = {"alpha": 0.2}
+    poly.plot(ax1, **attribute)
+    plane.plot(ax1, **attribute)
+    above, down = poly.cutby(plane)
+    above.plot(ax2, alpha=0.2)
+    down.plot(ax2, alpha=0.2)
     plt.show()

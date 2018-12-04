@@ -18,18 +18,18 @@ if __name__ == '__main__':
     ax2.axis('off')
     ax3 = plt.subplot2grid((2, 3), (1, 2), projection='3d')
     ax3.axis('off')
-    poly.plot(ax1)
+    arg = {"alpha": 0.2}
+    poly.plot(ax1, **arg)
     for e in constant:
         plane = InfinitePlane(normal_vector=normal_vector, intercept=e)
-        figplane = plane.plot(ax1)
+        figplane = plane.plot(ax1, **arg)
         # figintersect = ax1.scatter(intersect[:, 0], intersect[:, 1], intersect[:, 2], marker='x')
-        num, polys = poly.cutby(plane)
-        if num == 1:
+        above, down = poly.cutby(plane)
+        if above is None or down is None:
             ax1.patches.pop()
             continue
-        above, down = polys
-        above.plot(ax2)
-        down.plot(ax3)
+        above.plot(ax2, **arg)
+        down.plot(ax3, **arg)
         plt.pause(0.01)
         # ax1.patches.remove(figplane)
         ax1.patches.pop()
@@ -38,4 +38,4 @@ if __name__ == '__main__':
             ax2.patches.pop()
         while len(ax3.patches):
             ax3.patches.pop()
-    # print(points)
+    # # print(points)

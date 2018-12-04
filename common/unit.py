@@ -1,4 +1,5 @@
 from lib.simple3D import *
+from util.util import transform
 
 
 class Unit(Polyhedron):
@@ -39,12 +40,15 @@ class Unit(Polyhedron):
                 out_unit = Unit(index=self.index, poly=out_unit, material=that.material)
             return in_unit, out_unit
         else:
-            above_poly, down_poly = super(Unit, self).cutby(that)
-            above_unit = Unit(index=self.index, poly=above_poly, material=self.material) \
-                if above_poly is not None else None
-            down_unit = Unit(index=self.index, poly=down_poly, material=self.material)\
-                if down_poly is not None else None
-            return above_unit, down_unit
+            try:
+                above_poly, down_poly = super(Unit, self).cutby(that)
+                above_unit = Unit(index=self.index, poly=above_poly, material=self.material) \
+                    if above_poly is not None else None
+                down_unit = Unit(index=self.index, poly=down_poly, material=self.material) \
+                    if down_poly is not None else None
+                return above_unit, down_unit
+            except Exception:
+                raise ValueError("points are:\n{}\n\nridge are:\n{}\n\nplane is:\n{}".format(transform(self.points), self.ridge, that))
 
 
 if __name__ == "__main__":

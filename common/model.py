@@ -1,6 +1,7 @@
 from common import Unit, Cuboid
 from lib.simple3D import *
 from util.logging import logging
+from util.util import transform
 
 
 # TODO: modify the initiation method of points in model
@@ -191,7 +192,7 @@ class Model(object):
                             self.units[j] = Unit(index=unit.index, poly=out_poly, material=unit.material)
                             self.units.append(Unit(index=len(self.units), poly=in_poly, material=material))
                     except Exception:
-                        raise ValueError("\nthe region is:\n{}\nthe point of unit is:\n{}".format(region, unit.points))
+                        raise ValueError("\nthe region is:\n{}\nthe point of unit is:\n{}\nthe ridge of unit is:\n{}".format(region, transform(unit.points), unit.ridge))
         elif isinstance(regions, str):
             if regions == "remain":
                 for unit in self.units:
@@ -207,17 +208,17 @@ class Model(object):
         vision_planes = set([str(bound_plane) for bound_plane in self.bound.planes()])
         if self.holes is not None:
             for hole in self.holes:
-                vision_planes.union(set([str(hole_plane) for hole_plane in hole.planes()]))
+                vision_planes = vision_planes.union(set([str(hole_plane) for hole_plane in hole.planes()]))
         for unit in self.units:
             if unit.material != Unit.hole:
                 for unit_plane in unit.planes():
                     if str(unit_plane) in vision_planes:
                         if unit.material == Unit.brick:
-                            attribute = {"alpha": 0.5, "color": (0.42, 0.1, 0.05)}
+                            attribute = {"alpha": 1, "facecolor": (0.42, 0.1, 0.05)}
                         elif unit.material == Unit.mortar:
-                            attribute = {"alpha": 0.5, "color": (0.75, 0.75, 0.75)}
+                            attribute = {"alpha": 1, "facecolor": (0.75, 0.75, 0.75)}
                         else:
-                            attribute = {"alpha": 0.5, "color": (0.42, 0.1, 0.05)}
+                            attribute = {"alpha": 1, "facecolor": (0.42, 0.1, 0.05)}
                         unit_plane.plot(figure, **attribute)
 
     def output(self, path: str):
@@ -226,10 +227,10 @@ class Model(object):
 
 if __name__ == "__main__":
     origin = (0, 0, 0)
-    side = (240, 115, 90)
+    side = (2000, 240, 1000)
     bound = Cuboid(origin=origin, side=side)
     holes = list()
-    hole1 = Cuboid(origin=(15, 15, 0), side=(35, 35, 90))
+    hole1 = Cuboid(origin=(680, 0, 400), side=(640, 240, 500))
     # hole2 = Cuboid(origin=(15, 65, 0), side=(35, 35, 90))
     # hole4 = Cuboid(origin=(65, 65, 0), side=(47.5, 35, 90))
     # hole3 = Cuboid(origin=(65, 15, 0), side=(47.5, 35, 90))
@@ -237,11 +238,7 @@ if __name__ == "__main__":
     # hole6 = Cuboid(origin=(127.5, 65, 0), side=(47.5, 35, 90))
     # hole7 = Cuboid(origin=(190, 15, 0), side=(35, 35, 90))
     # hole8 = Cuboid(origin=(190, 65, 0), side=(35, 35, 90))
-    # hole2 = Cuboid(origin=(15, 140, 0), side=(35, 35, 90))
-    # hole3 = Cuboid(origin=(265, 15, 0), side=(35, 35, 90))
     holes.append(hole1)
-    # holes.append(hole2)
-    # holes.append(hole3)
     # holes.append(hole2)
     # holes.append(hole3)
     # holes.append(hole4)
@@ -249,13 +246,8 @@ if __name__ == "__main__":
     # holes.append(hole6)
     # holes.append(hole7)
     # holes.append(hole8)
-    model = Model(bound=bound, ele_size=20, holes=holes)
+    model = Model(bound=bound, ele_size=120, holes=holes)
     model.build()
-    # brick_bound1 = Cuboid(origin=(0, 0, 0), side=(240, 115, 90))
-    # brick_bound2 = Cuboid(origin=(0, 125, 0), side=(240, 115, 90))
-    # brick_bound3 = Cuboid(origin=(250, 0, 0), side=(115, 240, 90))
-    # model.assign([brick_bound1, brick_bound2, brick_bound3], Unit.brick)
-    # model.assign("remain", Unit.mortar)
     figure = Axes3D(plt.figure())
     model.plot(figure)
     minx, maxx = figure.get_xlim()

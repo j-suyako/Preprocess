@@ -30,3 +30,33 @@ def rotate_z(points, theta):
 def rotate_x(points, theta):
     rotate_matrix = np.asarray([[1, 0, 0], [0, np.cos(theta), np.sin(theta)], [0, -np.sin(theta), np.cos(theta)]])
     return np.dot(points, rotate_matrix)
+
+
+def ridge_renum(mapping, ridge):
+    if len(ridge) == 0:
+        raise ValueError()
+    ridge_map = dict(zip(mapping, list(range(len(mapping)))))
+    if isinstance(ridge[0], list):
+        return [[ridge_map[e] for e in r] for r in ridge]
+    else:
+        return [ridge_map[r] for r in ridge]
+
+
+def continuous_block(a):
+    res = []
+    start, end = 0, 1
+    while end < len(a):
+        if a[end] - a[start] == end - start:
+            pass
+        elif end - start == 1:
+            start = end
+        else:
+            res.append(a[start:end])
+            start = end
+        end += 1
+    res.append(a[start:end])
+    return res
+
+
+if __name__ == "__main__":
+    print(continuous_block([0, 1, 2, 4, 5, 6]))
