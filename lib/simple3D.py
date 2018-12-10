@@ -6,6 +6,7 @@ from mpl_toolkits.mplot3d import Axes3D, art3d
 import matplotlib.patches as patches
 from matplotlib.path import Path
 from util.math import norm, angel, rotate_x, rotate_z, ridge_renum
+from util.util import transform
 
 
 class Line(object):
@@ -14,26 +15,23 @@ class Line(object):
         if not isinstance(start_point, np.ndarray):
             start_point = np.array(list(start_point))
         if not isinstance(end_point, np.ndarray):
-            end_point = np.array(list(end_point))
+            end_point = np.array(end_point)
         self.start_point = start_point
         self.end_point = end_point
         self.vector = end_point - start_point
 
-    def takepoint(self, p, axis: str):
-        """取该线段所在直线上的一点"""
-        axis = axis.lower()
-        axs = ['x', 'y', 'z']
-        if axis not in axs:
-            raise ValueError()
-        index = axs.index(axis)
-        return (p - self.start_point[index]) / self.vector[index] * self.vector + self.start_point
+    def contains(self, point):
+        vec = point - self.start_point
+        t = np.cross(norm(vec), norm(self.vector))
+        if np.sqrt(np.dot(t, t)) < 1e-5:
+            return True
+        return False
 
-    @staticmethod
-    def in_same_plane(this, that, eps=1e-5):
-        if not isinstance(this, Line) and not isinstance(that, Line):
+    def in_same_plane(self, that, eps=1e-5):
+        if not isinstance(that, Line):
             raise TypeError()
         v = list()
-        for first in [this.start_point, this.end_point]:
+        for first in [self.start_point, self.end_point]:
             for second in [that.start_point, that.end_point]:
                 v.append(Line(first, second))
         for e in v:
@@ -41,38 +39,44 @@ class Line(object):
                 return True
         v1, v2, v3, v4 = v
         return True if (np.abs(np.cross(norm(v1 % v2), norm(v3 % v4))) <= eps).all() else False
-
-    def contains(self, point):
-        vec = point - self.start_point
-        t = np.around(np.cross(vec, self.vector), 5)
-        if np.sqrt(np.dot(t, t)) < 1e-5:
-            return True
-        return False
+        # v = list()
+        # for first in [self.start_point, self.end_point]:
+        #     for second in [that.start_point, that.end_point]:
+        #         v.append(Segment(first, second))
+        # for e in v:
+        #     if np.abs(e.vector < eps).all():
+        #         return True
+        # v1, v2, v3, v4 = v
+        # return True if (np.abs(np.cross(norm(v1 % v2), norm(v3 % v4))) <= eps).all() else False
 
     def intersect(self, that):
         if isinstance(that, Line):
             if self == that:
                 raise ValueError("these two segments are overlapped")
-            if not Line.in_same_plane(self, that):
-                return None
+            # if not self.in_same_plane(that):
+            #     return None
             if np.abs(angel(self.vector, that.vector)) < 1e-5:
                 return None
             temp = np.r_[self.vector, -that.vector].reshape(2, 3).T
             index = list()
-            for e in [[0, 1], [0, 2]]:
+            for e in [[0, 1], [0, 2], [1, 2]]:
                 if np.abs(np.linalg.det(temp[e])) > 1e-5:
                     index = e
                     break
-            t0 = np.dot(np.linalg.inv(temp[index]), (that.start_point - self.start_point)[index])[0]
-            return self.vector * t0 + self.start_point if 0 <= t0 <= 1 else None
+            t0, t1 = np.dot(np.linalg.inv(temp[index]), (that.start_point - self.start_point)[index])
+            flag1 = 0 < t0 < 1 if isinstance(self, Segment) else t0 > 0
+            flag2 = 0 < t1 < 1 if isinstance(that, Segment) else t1 > 0
+            if flag1 and flag2:
+                return self.vector * t0 + self.start_point
+            return None
 
     def plot(self, figure=None):
-        if figure and not isinstance(figure, Axes3D):
-            raise TypeError("figure argument must be a 3d layer")
-        fig = Axes3D(plt.figure()) if not figure else figure
-        x0, y0, z0 = self.start_point
-        x1, y1, z1 = self.end_point
-        fig.plot([x0, x1], [y0, y1], [z0, z1], 'o-')
+        pass
+
+    def _plot(self, figure, start, end):
+        x0, y0, z0 = start
+        x1, y1, z1 = end
+        figure.plot([x0, x1], [y0, y1], [z0, z1], 'o-')
 
     def __eq__(self, other):
         if (np.abs(self.start_point - other.start_point) >= 1e-5).any():
@@ -87,10 +91,76 @@ class Line(object):
         return np.cross(self.vector, other.vector)
 
     def __str__(self):
-        return str(self.start_point) + "->" + str(self.end_point)
+        return type(self).__name__ + ": " + str(self.start_point) + "->" + str(self.end_point)
 
     def __repr__(self):
         return str(self)
+
+
+class Segment(Line):
+
+    def __init__(self, start_point: iter, end_point: iter):
+        super(Segment, self).__init__(start_point=start_point, end_point=end_point)
+
+    def takepoint(self, p, axis: str):
+        """取该线段所在直线上的一点"""
+        axis = axis.lower()
+        axs = ['x', 'y', 'z']
+        if axis not in axs:
+            raise ValueError()
+        index = axs.index(axis)
+        return (p - self.start_point[index]) / self.vector[index] * self.vector + self.start_point
+
+    # def in_same_plane(self, that, eps=1e-5):
+    #     if not isinstance(self, Segment) and not isinstance(that, Segment):
+    #         raise TypeError()
+    #     v = list()
+    #     for first in [self.start_point, self.end_point]:
+    #         for second in [that.start_point, that.end_point]:
+    #             v.append(Segment(first, second))
+    #     for e in v:
+    #         if np.abs(e.vector < eps).all():
+    #             return True
+    #     v1, v2, v3, v4 = v
+    #     return True if (np.abs(np.cross(norm(v1 % v2), norm(v3 % v4))) <= eps).all() else False
+
+    def contains(self, point):
+        """
+
+        :param point:
+        :return:
+        """
+        if super(Segment, self).contains(point):
+            vec0 = point - self.start_point
+            vec1 = point - self.end_point
+            if np.dot(vec1, self.vector) < 0 < np.dot(vec0, self.vector):
+                return True
+        return False
+
+    def plot(self, figure=None):
+        if figure and not isinstance(figure, Axes3D):
+            raise TypeError("figure argument must be a 3d layer")
+        fig = Axes3D(plt.figure()) if not figure else figure
+        super(Segment, self)._plot(fig, self.start_point, self.end_point)
+
+
+class HalfLine(Line):
+
+    def __init__(self, start_point: iter, end_point: iter):
+        super(HalfLine, self).__init__(start_point=start_point, end_point=end_point)
+
+    def contains(self, point: iter):
+        if super(HalfLine, self).contains(point):
+            vec0 = point - self.start_point
+            if np.dot(vec0, self.vector) > 0:
+                return True
+        return False
+
+    def plot(self, figure=None):
+        if figure and not isinstance(figure, Axes3D):
+            raise TypeError("figure argument must be a 3d layer")
+        fig = Axes3D(plt.figure()) if not figure else figure
+        super(HalfLine, self)._plot(fig, self.start_point, self.end_point)
 
 
 class Plane(object):
@@ -200,7 +270,7 @@ class Plane(object):
             return False
         return True
 
-    def intersect(self, line: Line):
+    def intersect(self, line: Segment):
         """
         get the point where the plane and the line intersect, this problem finally reduced to the problem
         that get the point between two lines
@@ -217,7 +287,7 @@ class Plane(object):
         elif dis2 == 0:
             return end_point
         elif dis1 * dis2 < 0:
-            project_line = Line(start_point + nor_ver * dis1, end_point + nor_ver * dis2)
+            project_line = Segment(start_point + nor_ver * dis1, end_point + nor_ver * dis2)
             return project_line.start_point + project_line.vector * abs(dis1) / (abs(dis1) + abs(dis2))
         else:
             return None
@@ -330,7 +400,7 @@ class FinitePlane(Plane):
     def lines(self):
         for i in range(len(self.ridge)):
             start, end = self.ridge[i], self.ridge[(i + 1) if i < len(self.ridge) - 1 else 0]
-            yield Line(start_point=self.points[start], end_point=self.points[end])
+            yield Segment(start_point=self.points[start], end_point=self.points[end])
 
     def area(self):
         """
@@ -355,24 +425,21 @@ class FinitePlane(Plane):
         :return: boolean, true or false
         """
         if len(points.shape) == 1:
-            if super(FinitePlane, self).contains(points, error):
-                bound_points = self.points[self.ridge]
-                edge_vectors = bound_points - points
+            if super(FinitePlane, self).contains(points):
+                midpoint = (self.points[self.ridge[0]] + self.points[self.ridge[1]]) / 2
+                half_line = HalfLine(start_point=points, end_point=midpoint)
+                count = 0
+                for line in self.lines():
+                    if line.contains(points):
+                        return True
+                    count += 1 if half_line.intersect(line) is not None else 0
 
-                area = 0
-                for i in range(edge_vectors.shape[0]):
-                    start, end = i, i + 1 if i < edge_vectors.shape[0] - 1 else 0
-                    cross = np.cross(edge_vectors[start], edge_vectors[end])
-                    area += np.abs(np.sqrt(np.dot(cross, cross))) / 2
-
-                if abs(area - self.area()) < 1e-5:
-                    return True
-
+                return True if (count & 1) == 1 else False
             return False
         else:
             return [self.contains(point) for point in points]
 
-    def intersect(self, line: Line):
+    def intersect(self, line: Segment):
         intersect_point = super(FinitePlane, self).intersect(line)
         if intersect_point is not None and self.contains(intersect_point):
             return intersect_point
@@ -519,13 +586,13 @@ class Polyhedron(object):
         else:
             pass
 
-    def _intersect_line(self, line: Line, return_key=False):
+    def _intersect_line(self, line: Segment, return_key=False):
         points = list()
         key = list()
         for r in self.ridge:
             plane = FinitePlane(self.points[r], list(range(len(r))))
             point = plane.intersect(line=line)
-            if point is not None and plane.contains(point):
+            if point is not None:
                 points.append(list(point))
                 key.append(tuple(r))
         if return_key:
@@ -558,7 +625,7 @@ class Polyhedron(object):
         pass
 
     def intersect(self, that, return_key=False):
-        if isinstance(that, Line):
+        if isinstance(that, Segment):
             return self._intersect_line(that, return_key=return_key)
         elif isinstance(that, Plane):
             return self._intersect_plane(that, return_key=return_key)
@@ -656,28 +723,26 @@ class Polyhedron(object):
 
 
 if __name__ == '__main__':
-    points = np.array([[656.62857, 103.78734, 851.54812],
-                       [628.15485, 121.24006, 880.991],
-                       [645.44918, 0.0, 846.10231],
-                       [676.43643, 94.32469, 853.48044],
-                       [676.3464, 0.0, 849.70551],
-                       [710.88475, 0.0, 900.0],
-                       [708.65324, 84.11734, 900.0],
-                       [588.1006, 0.0, 900.0],
-                       [630.44643, 122.3901, 900.0],
-                       [606.40179, 111.90331, 900.0]])
-    ridge = [[5, 4, 3, 6], [5, 4, 2, 7], [8, 1, 0, 3, 6], [2, 0, 3, 4], [9, 1, 8], [7, 2, 0, 1, 9], [5, 6, 7, 8, 9]]
-    poly = Polyhedron(points)
-    plane = FinitePlane(points=np.array([[680, 0, 400],
-                                         [680, 0, 900],
-                                         [680, 240, 400],
-                                         [680, 240, 900]]))
+    points = np.array([[50.93043, 56.38548, 69.67531],
+                       [52.89435, 56.47037, 66.84145],
+                       [58.01927, 57.85984, 66.73233],
+                       [67.65346, 64.10058, 89.16457],
+                       [67.38912, 64.16193, 90.0],
+                       [54.22034, 60.54667, 90.0]])
+    ridge = [0, 1, 2, 3, 4, 5]
+    plane = FinitePlane(points=points, ridge=ridge)
+    line = Segment(start_point=(50, 50, 0), end_point=(50, 50, 90))
     ax1 = plt.subplot2grid((1, 2), (0, 0), projection="3d")
     ax2 = plt.subplot2grid((1, 2), (0, 1), projection="3d")
     attribute = {"alpha": 0.2}
-    poly.plot(ax1, **attribute)
+    # poly.plot(ax1, **attribute)
     plane.plot(ax1, **attribute)
-    above, down = poly.cutby(plane)
-    above.plot(ax2, alpha=0.2)
-    down.plot(ax2, alpha=0.2)
+    line.plot(ax1)
+    intersect = plane.intersect(line)
+    if intersect is not None:
+        halfline = HalfLine(start_point=intersect, end_point=(points[0]+points[1])/2)
+        halfline.plot(ax1)
+    # above, down = poly.cutby(plane)
+    # above.plot(ax2, alpha=0.2)
+    # down.plot(ax2, alpha=0.2)
     plt.show()

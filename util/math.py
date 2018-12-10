@@ -3,6 +3,8 @@ import numpy as np
 
 def norm(x):
     if len(x.shape) == 1:
+        if np.sum(np.abs(x)) <= 1e-5:
+            return np.array([0, 0, 0])
         # x = np.array([0 if abs(e) < 1e-5 else e for e in x])
         x = x / np.max(np.abs(x))
         return x / np.sqrt(np.dot(x, x))

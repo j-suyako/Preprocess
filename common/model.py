@@ -184,7 +184,9 @@ class Model(object):
                     unit = self.units[j]
                     try:
                         in_poly, out_poly = region.cut(unit)
-                        if in_poly is None:
+                        if in_poly is None and out_poly is None:
+                            unit.material = material
+                        elif in_poly is None:
                             continue
                         elif out_poly is None:
                             unit.material = material
@@ -227,26 +229,26 @@ class Model(object):
 
 if __name__ == "__main__":
     origin = (0, 0, 0)
-    side = (2000, 240, 1000)
+    side = (240, 115, 90)
     bound = Cuboid(origin=origin, side=side)
     holes = list()
-    hole1 = Cuboid(origin=(680, 0, 400), side=(640, 240, 500))
-    # hole2 = Cuboid(origin=(15, 65, 0), side=(35, 35, 90))
-    # hole4 = Cuboid(origin=(65, 65, 0), side=(47.5, 35, 90))
-    # hole3 = Cuboid(origin=(65, 15, 0), side=(47.5, 35, 90))
-    # hole5 = Cuboid(origin=(127.5, 15, 0), side=(47.5, 35, 90))
-    # hole6 = Cuboid(origin=(127.5, 65, 0), side=(47.5, 35, 90))
-    # hole7 = Cuboid(origin=(190, 15, 0), side=(35, 35, 90))
-    # hole8 = Cuboid(origin=(190, 65, 0), side=(35, 35, 90))
+    hole1 = Cuboid(origin=(15, 15, 0), side=(35, 35, 90))
+    hole2 = Cuboid(origin=(15, 65, 0), side=(35, 35, 90))
+    hole4 = Cuboid(origin=(65, 65, 0), side=(47.5, 35, 90))
+    hole3 = Cuboid(origin=(65, 15, 0), side=(47.5, 35, 90))
+    hole5 = Cuboid(origin=(127.5, 15, 0), side=(47.5, 35, 90))
+    hole6 = Cuboid(origin=(127.5, 65, 0), side=(47.5, 35, 90))
+    hole7 = Cuboid(origin=(190, 15, 0), side=(35, 35, 90))
+    hole8 = Cuboid(origin=(190, 65, 0), side=(35, 35, 90))
     holes.append(hole1)
-    # holes.append(hole2)
-    # holes.append(hole3)
-    # holes.append(hole4)
-    # holes.append(hole5)
-    # holes.append(hole6)
-    # holes.append(hole7)
-    # holes.append(hole8)
-    model = Model(bound=bound, ele_size=120, holes=holes)
+    holes.append(hole2)
+    holes.append(hole3)
+    holes.append(hole4)
+    holes.append(hole5)
+    holes.append(hole6)
+    holes.append(hole7)
+    holes.append(hole8)
+    model = Model(bound=bound, ele_size=10, holes=holes)
     model.build()
     figure = Axes3D(plt.figure())
     model.plot(figure)
