@@ -15,6 +15,8 @@ def norm(x):
 def angel(vec1, vec2):
     if (np.abs(vec1) < 1e-5).all() or (np.abs(vec1) < 1e-5).all():
         return 0
+    vec1 = norm(vec1)
+    vec2 = norm(vec2)
     return np.arccos(np.sum(vec1 * vec2) / np.sqrt(np.sum(vec1 * vec1) * np.sum(vec2 * vec2)))
 
 
@@ -61,4 +63,6 @@ def continuous_block(a):
 
 
 if __name__ == "__main__":
-    print(continuous_block([0, 1, 2, 4, 5, 6]))
+    vec1 = np.array([0, -16.7445, 0])
+    vec2 = np.array([0, -3.489, 0])
+    print(angel(vec1, vec2))

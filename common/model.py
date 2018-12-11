@@ -216,11 +216,11 @@ class Model(object):
                 for unit_plane in unit.planes():
                     if str(unit_plane) in vision_planes:
                         if unit.material == Unit.brick:
-                            attribute = {"alpha": 1, "facecolor": (0.42, 0.1, 0.05)}
+                            attribute = {"alpha": 0.2, "facecolor": (0.42, 0.1, 0.05)}
                         elif unit.material == Unit.mortar:
-                            attribute = {"alpha": 1, "facecolor": (0.75, 0.75, 0.75)}
+                            attribute = {"alpha": 0.2, "facecolor": (0.75, 0.75, 0.75)}
                         else:
-                            attribute = {"alpha": 1, "facecolor": (0.42, 0.1, 0.05)}
+                            attribute = {"alpha": 0.2, "facecolor": (0.42, 0.1, 0.05)}
                         unit_plane.plot(figure, **attribute)
 
     def output(self, path: str):
@@ -229,7 +229,7 @@ class Model(object):
 
 if __name__ == "__main__":
     origin = (0, 0, 0)
-    side = (240, 115, 90)
+    side = (240, 115, 100)
     bound = Cuboid(origin=origin, side=side)
     holes = list()
     hole1 = Cuboid(origin=(15, 15, 0), side=(35, 35, 90))

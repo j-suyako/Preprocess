@@ -55,7 +55,7 @@ class Line(object):
                 raise ValueError("these two segments are overlapped")
             # if not self.in_same_plane(that):
             #     return None
-            if np.abs(angel(self.vector, that.vector)) < 1e-5:
+            if (np.abs(np.cross(norm(self.vector), norm(that.vector))) <= 1e-5).all():
                 return None
             temp = np.r_[self.vector, -that.vector].reshape(2, 3).T
             index = list()
@@ -63,12 +63,15 @@ class Line(object):
                 if np.abs(np.linalg.det(temp[e])) > 1e-5:
                     index = e
                     break
-            t0, t1 = np.dot(np.linalg.inv(temp[index]), (that.start_point - self.start_point)[index])
-            flag1 = 0 < t0 < 1 if isinstance(self, Segment) else t0 > 0
-            flag2 = 0 < t1 < 1 if isinstance(that, Segment) else t1 > 0
-            if flag1 and flag2:
-                return self.vector * t0 + self.start_point
-            return None
+            try:
+                t0, t1 = np.dot(np.linalg.inv(temp[index]), (that.start_point - self.start_point)[index])
+                flag1 = 0 < t0 < 1 if isinstance(self, Segment) else t0 > 0
+                flag2 = 0 < t1 < 1 if isinstance(that, Segment) else t1 > 0
+                if flag1 and flag2:
+                    return self.vector * t0 + self.start_point
+                return None
+            except np.linalg.LinAlgError:
+                a = 1
 
     def plot(self, figure=None):
         pass

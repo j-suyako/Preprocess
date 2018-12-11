@@ -48,12 +48,14 @@ class Cuboid(Polyhedron):
             elif len(intersect_planes) == 2:
                 return self._cut_2_plane(poly, intersect_planes, is_contain)
             elif len(intersect_planes) == 3:
+                # return None, None
                 return self._cut_3_plane(poly, intersect_planes, is_contain)
             elif len(intersect_planes) > 3:
                 raise ValueError()
         except Exception:
-            raise ValueError("in points are:\n{}\n\nout points are:\n{}".format(poly.points[is_contain],
-                                                                                poly.points[~is_contain]))
+            return None, None
+            # raise ValueError("in points are:\n{}\n\nout points are:\n{}".format(poly.points[is_contain],
+            #                                                                     poly.points[~is_contain]))
 
         # elif np.all(is_contain):
         #     return poly, None
@@ -195,7 +197,10 @@ class Cuboid(Polyhedron):
         corner_point = line0 & line1 & line2
         if len(corner_point) != 1:
             raise ValueError()
-
+        if not np.any(self.contains(poly.points)):
+            return None, None
+        # if not poly.contains(corner_point):
+        #     return None, None
         intersect_points, keys = list(), list()
         for plane in planes:
             points, key = poly.intersect(plane, return_key=True)
@@ -208,27 +213,42 @@ class Cuboid(Polyhedron):
         intersect_points.append(np.array(list(corner_point)))
 
         n = poly.points.shape[0]
-        mapping = dict(zip(keys, list(range(n, n + len(keys)))))
+        mapping = dict()
+        for i, key in enumerate(keys):
+            mapping.setdefault(key, list())
+            mapping[key].append(i + n)
 
+        all_points = np.concatenate((poly.points, np.concatenate([e for e in intersect_points])))
         ridge = [[], []]
         for r in poly.ridge:
-            flag = list()
+            in_flag = list()
             new_r = list()
             for i in range(len(r)):
                 start, end = i, i + 1 if i < len(r) - 1 else 0
                 minr, maxr = (r[start], r[end]) if r[start] < r[end] else (r[end], r[start])
                 new_r.append(r[start])
                 if (minr, maxr) in mapping:
-                    flag.append(start)
-                    new_r.append(mapping[(minr, maxr)])
-            if len(flag) < 2:
+                    in_flag.append(start)
+                    t = mapping[(minr, maxr)]
+                    if len(t) == 2:
+                        vec0 = all_points[t[0]] - all_points[r[start]]
+                        vec1 = all_points[t[1]] - all_points[r[start]]
+                        length0 = np.dot(vec0, vec0)
+                        length1 = np.dot(vec1, vec1)
+                        if length0 > length1:
+                            new_r.extend([t[1], t[0]])
+                        else:
+                            new_r.extend(t)
+                    else:
+                        new_r.extend(t)
+            if len(in_flag) < 2:
                 ridge[0 if self.contains(poly.points[r[0]]) else 1].append(r)
             else:
                 r = tuple(r)
                 if r in mapping:
-                    r0, r1 = new_r[:flag[0] + 2] + [mapping[r]] + new_r[flag[1] + 2:], new_r[flag[0] + 1:flag[1] + 3] + [mapping[r]]
+                    r0, r1 = new_r[:in_flag[0] + 2] + mapping[r] + new_r[in_flag[1] + 2:], new_r[in_flag[0] + 1:in_flag[1] + 3] + mapping[r]
                 else:
-                    r0, r1 = new_r[:flag[0] + 2] + new_r[flag[1] + 2:], new_r[flag[0] + 1:flag[1] + 3]
+                    r0, r1 = new_r[:in_flag[0] + 2] + new_r[in_flag[1] + 2:], new_r[in_flag[0] + 1:in_flag[1] + 3]
                 if not self.contains(poly.points[r[0]]):
                     r0, r1 = r1, r0
                 ridge[0].append(r0)
@@ -297,38 +317,43 @@ class Cuboid(Polyhedron):
 
 
 if __name__ == "__main__":
-    hole = Cuboid(origin=(65, 15, 0), side=(47.5, 35, 90))
+    hole = Cuboid(origin=(65, 65, 0), side=(47.5, 35, 90))
     # holes = [hole]
     # print(holes)
-    points = np.array([[113.69486, 42.95346, 41.85709],
-                       [102.71727, 51.11754, 33.26388],
-                       [95.83617, 46.42959, 48.28318],
-                       [101.92943, 49.62136, 43.9067],
-                       [112.07645, 28.00554, 47.34064],
-                       [107.08356, 30.37575, 52.67188],
-                       [105.62027, 41.31443, 51.78646],
-                       [108.53197, 45.00889, 47.46435],
-                       [88.54965, 45.60749, 25.66459],
-                       [83.29382, 42.62559, 31.56749],
-                       [88.90811, 43.57757, 46.03256],
-                       [93.25398, 47.67067, 26.01554],
-                       [101.11412, 24.30969, 50.86089],
-                       [84.32185, 25.31197, 45.1246],
-                       [97.60511, 27.63983, 21.19723],
-                       [106.23854, 27.32506, 20.87991],
-                       [104.79604, 19.7607, 44.35336],
-                       [110.85408, 24.40654, 44.80228],
-                       [100.35262, 14.8276, 33.51131],
-                       [106.43435, 18.79946, 29.19216],
-                       [90.73672, 16.6361, 32.4409],
-                       [89.74139, 17.8269, 31.34994],
-                       [83.40851, 24.4681, 43.20119],
-                       [81.66279, 26.76585, 37.08548],
-                       [112.3364, 45.30957, 33.51585],
-                       [108.02586, 48.43891, 30.55484],
-                       [107.47592, 32.55523, 22.07105],
-                       [104.34716, 45.34242, 25.15684]])
-    ridge = [[0, 24, 25, 1, 3, 7], [0, 4, 17, 19, 15, 26, 24], [1, 25, 27, 11], [4, 17, 16, 12, 5], [8, 14, 15, 26, 27, 11], [12, 13, 22, 20, 18, 16], [8, 14, 21, 23, 9], [16, 18, 19, 17], [20, 22, 23, 21], [14, 15, 19, 18, 20, 21], [0, 4, 5, 6, 7], [2, 6, 5, 12, 13, 10], [1, 3, 2, 10, 9, 8, 11], [9, 23, 22, 13, 10], [2, 6, 7, 3], [24, 26, 27, 25]]
+    # points = np.array([[39.28709, 45.45487, 78.01736],
+    #                    [37.44342, 43.29013, 79.40019],
+    #                    [35.50332, 50.5173, 100.0],
+    #                    [64.15525, 28.6708, 88.87884],
+    #                    [64.22604, 28.35987, 100.0],
+    #                    [67.06721, 31.93641, 90.51979],
+    #                    [66.96031, 31.48049, 100.0],
+    #                    [34.24821, 48.57623, 100.0],
+    #                    [47.84081, 26.01593, 100.0],
+    #                    [43.10646, 55.35273, 86.05597],
+    #                    [43.31296, 53.04817, 80.77103],
+    #                    [52.01929, 47.86635, 75.40178],
+    #                    [61.38306, 47.86672, 82.80327],
+    #                    [51.38823, 58.48231, 100.0],
+    #                    [57.7315, 56.36167, 100.0],
+    #                    [47.65265, 26.3383, 87.9009],
+    #                    [58.53266, 27.99081, 84.57208],
+    #                    [40.83577, 37.66126, 77.51998],
+    #                    [46.71891, 40.89292, 73.36141],
+    #                    [47.44043, 40.96445, 73.17905]])
+    points = np.array([[72.39822, 96.51942, 85.35513],
+                       [68.00106, 88.59854, 85.38777],
+                       [52.86873, 115.0, 82.04891],
+                       [46.02393, 115.0, 100.0],
+                       [67.02831, 115.0, 83.58426],
+                       [72.26459, 115.0, 100.0],
+                       [75.51453, 102.50047, 100.0],
+                       [66.60147, 86.44316, 100.0],
+                       [48.88944, 90.56151, 83.18921],
+                       [52.21523, 87.38798, 83.75394],
+                       [53.37971, 85.23931, 100.0],
+                       [43.11217, 94.9241, 100.0]])
+    # ridge = [[4, 8, 15, 16, 3], [4, 6, 5, 3], [0, 18, 19, 11, 10], [3, 5, 12, 11, 19, 16], [15, 17, 18, 19, 16], [13, 14, 12, 11, 10, 9], [2, 13, 9], [6, 14, 12, 5], [2, 7, 1, 0, 10, 9], [4, 8, 7, 2, 13, 14, 6], [7, 1, 17, 15, 8], [0, 18, 17, 1]]
+    ridge = [[4, 2, 8, 9, 1, 0], [5, 6, 7, 10, 11, 3], [4, 5, 6, 0], [6, 7, 1, 0], [2, 4, 5, 3], [11, 10, 9, 8], [7, 10, 9, 1], [2, 3, 11, 8]]
     poly = Polyhedron(points=points, ridge=ridge)
     # poly2 = Polyhedron(points=points, ridge=ridge)
     ax1 = plt.subplot2grid((1, 2), (0, 0), projection="3d")
@@ -336,8 +361,8 @@ if __name__ == "__main__":
     poly.plot(ax1, alpha=0.2)
     hole.plot(ax1, alpha=0.2)
     in_hole, out_hole = hole.cut(poly)
-    if in_hole is not None:
-        in_hole.plot(ax2, alpha=0.2)
-    if out_hole is not None:
-        out_hole.plot(ax2, alpha=0.2)
+    # if in_hole is not None:
+    #     in_hole.plot(ax2, alpha=0.2)
+    # if out_hole is not None:
+    #     out_hole.plot(ax2, alpha=0.2)
     plt.show()
