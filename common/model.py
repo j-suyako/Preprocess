@@ -1,10 +1,13 @@
-from common import Unit, Cuboid
+from common import Cuboid, Block
+from concurrent import futures
+from functools import reduce
 from lib.simple3D import *
+from typing import List
 from util.logging import logging
-from util.util import transform
+import numpy as np
+import time
 
 
-# TODO: modify the initiation method of points in model
 def mirror_projection(points, face: Plane):
     if len(points.shape) == 1:
         t = -(np.dot(face.normal_vector, points) + face.intercept) / (np.dot(face.normal_vector, face.normal_vector))
@@ -13,250 +16,208 @@ def mirror_projection(points, face: Plane):
         return np.array([mirror_projection(point, face) for point in points])
 
 
-def sandwich(collection, breads: list, axis: int, sort=True):
-    """get the cross sections perpendicular to {axis} in {intercepts} in {collection}
-
-    :param collection:
-    :param breads:
-    :param axis:
-    :param sort:
-    :return:
-    """
-    for e in collection:
-        if 'range' not in e.__dict__:
-            raise TypeError()
-    if axis not in [0, 1, 2]:
-        raise ValueError()
-    if sort:
-        collection.sort(key=lambda x: x.range[axis][0])
-    breads.sort()
-    start_index, end_index = 0, 0
-    normal_vector = np.zeros(3)
-    normal_vector[axis] = 1
-    for bottom, above in breads:
-        bottom_plane = InfinitePlane(normal_vector, -bottom)
-        above_plane = InfinitePlane(normal_vector, -above)
-        res = list()
-        if collection[end_index].range[axis][1] < bottom:
-            start_index = end_index
-        else:
-            end_index = start_index
-        for unit in collection[start_index:]:
-            if unit.range[axis][0] <= bottom < unit.range[axis][1]:
-                res.append(unit.cutby(bottom_plane)[1])
-            elif unit.range[axis][0] < above <= unit.range[axis][1]:
-                res.append(unit.cutby(above_plane)[0])
-            elif bottom < unit.range[axis][0] and above > unit.range[axis][1]:
-                res.append(unit)
-            elif unit.range[axis][0] >= above:
-                break
-            end_index += 1
-        yield res
-
-
-def split(collection, axis: int, sort=True):
-    for e in collection:
-        if 'range' not in e.__dict__:
-            raise TypeError()
-    if axis not in [0, 1, 2]:
-        raise ValueError()
-    if sort:
-        collection.sort()
-    res = list()
-    res.append(0)
-    n = len(collection)
-    for i in range(n - 1):
-        if collection[i].range[axis][0] < collection[i + 1].range[axis][0]:
-            res.append(i + 1)
-    res.append(n)
-    return res
-
-
-def get_range(collection, slices, axis: int):
-    return [(collection[s].range[axis][0], collection[s].range[axis][1]) for s in slices[:-1]]
+def output_wrap(e):
+    res = ""
+    if isinstance(e, int) or isinstance(e, float):
+        res += str(e)
+    if isinstance(e, list) or isinstance(e, np.ndarray):
+        res += str(e).lstrip("[").rstrip("]").strip(" ")
+    return res + "\n"
 
 
 class Model(object):
-    def __init__(self, bound: Cuboid, ele_size=5.0, holes=None):
-        """
+    hole_origins = np.array([[15, 15, 0], [15, 65, 0],
+                             [65, 15, 0], [65, 65, 0],
+                             [127.5, 15, 0], [127.5, 65, 0],
+                             [190, 15, 0], [190, 65, 0]])
+    hole_sides = np.array([[35, 35, 90], [35, 35, 90],
+                           [47.5, 35, 90], [47.5, 35, 90],
+                           [47.5, 35, 90], [47.5, 35, 90],
+                           [35, 35, 90], [35, 35, 90]])
 
-        :param bound:
-        :param ele_size:
-        :param holes:
-        """
-        self.bound = bound
+    @staticmethod
+    def standard_brick(pan_vector=(0, 0, 0), direction: str=None, ele_size=5):
+        holes = [Cuboid(origin=Model.hole_origins[i] + pan_vector, side=Model.hole_sides[i])
+                 for i in range(Model.hole_origins.shape[0])]
+        brick = Block(bound=Cuboid(origin=pan_vector, side=(240, 115, 90)), holes=holes, ele_size=ele_size)
+        brick.initial()
+        brick.rotate(brick.centroid(), direction)
+        return brick
+
+    def __init__(self, condition: dict):
+        vecs = condition["pan"]
+        rotate_directions = condition["rotate"]
+        ele_size = condition["size"]
+        self.layers = len(vecs)
+        self.bricks = self._build_bricks(vecs, rotate_directions, ele_size)
+        self.mortas, self.entity = self._build_remain([len(vec) for vec in vecs])
         self.ele_size = ele_size
-        self.holes = holes
-        self.points = self._points_initial()
-        self.units = list()
+        if "integer-rotate" in condition:
+            self.rotate(condition["integer-rotate"])
 
-    @logging("points initialization")
-    def _points_initial(self) -> np.ndarray:
-        """points initialization
+    @staticmethod
+    def _inter(this: Cuboid, that: Cuboid):
+        relative_direction = norm(that.centroid() - this.centroid())
+        if np.all(np.abs(relative_direction) - 1):
+            raise ValueError("Models are not aligning.")
+        j = np.argwhere(relative_direction).flatten()[0]
+        if np.abs(that.centroid() - this.centroid())[j] < (this.side + that.side)[j] / 2:
+            raise ValueError("Models are overlapped.")
 
-        :return:
-        """
-        # TODO: judge if points in bound after initialization(irregular bound)
-        n_points = int(0.68 * self.bound.volume() / self.ele_size ** 3)
+        base = [this, that][0 if relative_direction[j] > 0 else 1]
+        diff = np.zeros(3)
+        diff[j] = base.side[j]
+        origin = base.origin + diff
+        side = np.array(base.side)
+        side[j] = (np.abs(that.centroid() - this.centroid()) - (this.side + that.side) / 2)[j]
 
-        zoom_matrix = np.zeros((3, 3), dtype="float64")
-        for i in range(3):
-            zoom_matrix[i][i] = self.bound.range[i][1] - self.bound.range[i][0]
+        inter = Block(Cuboid(origin=origin, side=side), holes=None, material=Block.morta)
+        points = list()
 
-        pan_matrix = np.array([self.bound.range[0][0], self.bound.range[1][0], self.bound.range[2][0]], dtype="float64")
-        return np.dot(np.random.rand(n_points, 3), zoom_matrix) + pan_matrix
+        for p, model in enumerate([this, that]):
+            direction = relative_direction * (1 if p == 0 else -1)
+            intercepts = [-model.origin - model.side, model.origin]
+            i = 1 if sum(direction) == -1 else 0
+            touching_face = InfinitePlane(normal_vector=direction, intercept=intercepts[i][j])
 
-    @logging("quasihomogenization")
-    def _quasi_homogenization(self, iter_num=6):
-        """first homogenization the distribution of points
+            index = [["right_index", "back_index", "up_index"],
+                     ["left_index", "front_index", "down_index"]]
+            points.append(mirror_projection(model.points[getattr(model, index[i][j])], touching_face))
 
-        :param iter_num:
-        :return:
-        """
-        n = self.points.shape[0]
+        inter.initial(np.concatenate(points))
+        return inter
 
-        LOGGER.info("start homogenization...")
-        for i in range(iter_num):
-            LOGGER.debug("{}th homogenization".format(i + 1))
-            points = self.points
-            for plane in self.bound.planes():
-                points = np.r_[points, mirror_projection(self.points, plane)]
+    @staticmethod
+    def _assemble(this: Cuboid, that: Cuboid, mortas: list):
+        morta = Model._inter(this, that)
+        mortas.append(morta)
+        return this.assemble(morta).assemble(that)
 
-            # see the {@ref: http://scipy.github.io/devdocs/generated/scipy.spatial.Voronoi.html#scipy.spatial.Voronoi}
-            # to learn more about Voronoi and its attributes
-            ith_vor = Voronoi(points)
-            points = np.array([])
+    @staticmethod
+    def _build_bricks(vecs, rotate_directions, ele_size):
+        bricks = list()
+        for layer_vec, layer_direction in zip(vecs, rotate_directions):
+            for vec, direction in zip(layer_vec, layer_direction):
+                bricks.append(Model.standard_brick(pan_vector=vec, direction=direction, ele_size=ele_size))
+        return bricks
 
-            for j, jth_region in enumerate(ith_vor.point_region[:n]):
-                curr_region = ith_vor.regions[jth_region]
-                region_map = dict(zip(curr_region, list(range(len(curr_region)))))
-                curr_points = ith_vor.vertices[curr_region]
+    def _build_remain(self, length):
+        mortas = list()
+        n = 0
+        layers = list()
+        for l in length:
+            layers.append(reduce(lambda x, y: Model._assemble(x, y, mortas), self.bricks[n:n + l]))
+            n += l
 
-                ridge_index = np.r_[ith_vor.ridge_points[ith_vor.ridge_points[:, 0] == j],
-                                    ith_vor.ridge_points[ith_vor.ridge_points[:, 1] == j]]
-                ridge = [ith_vor.ridge_dict[tuple(index)] for index in ridge_index if
-                         -1 not in ith_vor.ridge_dict[tuple(index)]]
+        if len(layers) == 1:
+            entity = layers[0].clone()
+        else:
+            entity = reduce(lambda x, y: Model._assemble(x, y, mortas), layers)
+        return mortas, entity
 
-                # mapping ridge
-                ridge = [[region_map[e] for e in r] for r in ridge]
+    def rotate(self, direction):
+        centroid = self.entity.centroid()
+        for brick in self.bricks:
+            brick.rotate(centroid, direction)
+        for morta in self.mortas:
+            morta.rotate(centroid, direction)
+        self.entity.rotate(centroid, direction)
+        # return self
 
-                jth_unit = Unit(index=j, points=curr_points, ridge=ridge)
-                points = np.r_[points, jth_unit.centroid()]
-                if i == iter_num - 1:
-                    self.units.append(jth_unit)
-
-            self.points = points.reshape((-1, 3))
-
-    @logging("build")
-    def build(self, quasi_homo_iter=6):
-        self._quasi_homogenization(quasi_homo_iter)
-        if self.holes is not None:
-            LOGGER.info("opening hole...")
-            self.assign(self.holes, Unit.hole)
-        self.units = [e for e in self.units if e.material != Unit.hole]
-
-    @logging("assigning")
-    def assign(self, regions: [list, str], material: str):
-        if isinstance(regions, list):
-            LOGGER.info("assigning {} by {}".format(regions, material))
-            in_region_units = list()
-            bread_slice = split(collection=regions, axis=2)
-            bread_range = get_range(collection=regions, slices=bread_slice, axis=2)
-            for i, meat in enumerate(sandwich(self.units, bread_range, 2)):  # meat layer
-                LOGGER.debug("get meat layer between {} with {} in z axis".format(bread_range[i][0], bread_range[i][1]))
-                meat_region = regions[bread_slice[i]:bread_slice[i + 1]]
-                meat_slice = split(collection=meat_region, axis=0, sort=False)
-                meat_range = get_range(collection=meat_region, slices=meat_slice, axis=0)
-                for j, butter in enumerate(sandwich(meat, meat_range, 0)):  # butter layer
-                    LOGGER.debug("get butter layer between {} with {} in x axis".format(meat_range[j][0], meat_range[j][1]))
-                    butter_region = meat_region[meat_slice[j]:meat_slice[j + 1]]
-                    butter_slice = split(collection=butter_region, axis=1, sort=False)
-                    butter_range = get_range(collection=butter_region, slices=butter_slice, axis=1)
-                    for k, lettuce in enumerate(sandwich(butter, butter_range, 1)):
-                        LOGGER.debug("get lettuce between {} with {} in y axis".format(butter_range[k][0], butter_range[k][1]))
-                        in_region_units.append([e.index for e in lettuce])
-            self.units.sort(key=lambda x: x.index)
-            for i, region in enumerate(regions):
-                if not isinstance(region, Cuboid):
-                    raise TypeError()
-                LOGGER.debug("{}th region cutting...".format(i))
-                for j in in_region_units[i]:
-                    unit = self.units[j]
-                    try:
-                        in_poly, out_poly = region.cut(unit)
-                        if in_poly is None and out_poly is None:
-                            unit.material = material
-                        elif in_poly is None:
-                            continue
-                        elif out_poly is None:
-                            unit.material = material
-                        else:
-                            self.units[j] = Unit(index=unit.index, poly=out_poly, material=unit.material)
-                            self.units.append(Unit(index=len(self.units), poly=in_poly, material=material))
-                    except Exception:
-                        raise ValueError("\nthe region is:\n{}\nthe point of unit is:\n{}\nthe ridge of unit is:\n{}".format(region, transform(unit.points), unit.ridge))
-        elif isinstance(regions, str):
-            if regions == "remain":
-                for unit in self.units:
-                    if unit.material is None:
-                        unit.material = material
+    @logging("building")
+    def build(self, pin=False):
+        with futures.ProcessPoolExecutor() as pool:
+            self.bricks = list(pool.map(Block.build, self.bricks))
+            self.mortas = list(pool.map(Block.build, self.mortas))
+        zlist, index = None, np.argwhere(self.bricks[0].holes[0].side == self.bricks[0].side)[0][0]
+        if pin:
+            zlist = set()
+            # index = np.argmin(self.mortas[-self.layers + 1].side) if len(self.mortas) > 0 else 2
+            for morta in self.mortas[-self.layers + 1:]:
+                zlist.add(morta.origin[index])
+                zlist.add(morta.origin[index] + morta.side[index])
+        LOGGER.debug("start removing redundancy...")
+        for i, brick in enumerate(self.bricks):
+            self.bricks[i] = brick.remove_redundancy(zlist, index)
+        LOGGER.debug("removing redundancy finished.")
+        for block in list(self.bricks) + list(self.mortas):
+            LOGGER.info("{} has {} units".format(block, len(block.units)))
 
     @logging("plotting")
-    def plot(self, figure=None):
+    def plot(self, path=None, figure=None, **kwargs):
         if figure and not isinstance(figure, Axes3D):
             raise TypeError("figure argument must be a 3d layer")
-        LOGGER.info("start plotting...")
-        figure = Axes3D(plt.figure()) if not figure else figure
-        vision_planes = set([str(bound_plane) for bound_plane in self.bound.planes()])
-        if self.holes is not None:
-            for hole in self.holes:
-                vision_planes = vision_planes.union(set([str(hole_plane) for hole_plane in hole.planes()]))
-        for unit in self.units:
-            if unit.material != Unit.hole:
-                for unit_plane in unit.planes():
-                    if str(unit_plane) in vision_planes:
-                        if unit.material == Unit.brick:
-                            attribute = {"alpha": 0.2, "facecolor": (0.42, 0.1, 0.05)}
-                        elif unit.material == Unit.mortar:
-                            attribute = {"alpha": 0.2, "facecolor": (0.75, 0.75, 0.75)}
-                        else:
-                            attribute = {"alpha": 0.2, "facecolor": (0.42, 0.1, 0.05)}
-                        unit_plane.plot(figure, **attribute)
+        figure = plt.subplot(111, aspect="equal", projection="3d") if not figure else figure
 
+        figure.axis("off")
+        for block in list(self.bricks) + list(self.mortas):
+            block.plot(figure=figure, **kwargs)
+        # for brick in self.bricks:
+        #     brick.plot(figure=figure, **kwargs)
+        # for morta in self.mortas:
+        #     morta.plot(figure=figure, **kwargs)
+
+        unit_nums = 0
+        for block in list(self.bricks) + list(self.mortas):
+            unit_nums += len(block.units)
+        if path is not None:
+            fig_name = "--".join([e1 + str(e2) for e1, e2 in zip(["length-", "weight-", "height-"], self.entity.side)]) + \
+                       "--eleNum-" + str(unit_nums) + "--" + \
+                       time.strftime('%Y%m%d', time.localtime(time.time())) + ".png"
+            LOGGER.info("figure name is {}.".format(fig_name))
+            figure.view_init(elev=17, azim=-75)
+            plt.savefig(path + fig_name)
+
+    @logging("outputing")
     def output(self, path: str):
-        pass
+        def _write(e):
+            if isinstance(e, int) or isinstance(e, float):
+                res = str(e)
+            elif isinstance(e, list):
+                res = str(e).lstrip("[").rstrip("]").strip(" ").replace(",", "")
+            elif isinstance(e, np.ndarray):
+                res = str(e).lstrip("[").rstrip("]").strip(" ")
+            else:
+                res = ""
+            f.write(res + "\n")
+
+        def _unit_type(unit: Polyhedron):
+            unit_type = [0] * 3
+            for i, (min, max) in enumerate(zip(self.entity.origin, self.entity.origin + self.entity.side)):
+                if np.sum(np.abs(unit.verts[:, i] - min) < 1e-6) >= 3:
+                    unit_type[i] = -1
+                elif np.sum(np.abs(unit.verts[:, i] - max) < 1e-6) >= 3:
+                    unit_type[i] = 1
+            return unit_type
+
+        unit_nums = 0
+        for block in list(self.bricks) + list(self.mortas):
+            unit_nums += len(block.units)
+        doc_name = "--".join([e1 + str(e2) for e1, e2 in zip(["length-", "weight-", "height-"], self.entity.side)]) + \
+                   "--eleNum-" + str(unit_nums) + "--" + \
+                   time.strftime('%Y%m%d', time.localtime(time.time())) + ".txt"
+        LOGGER.debug("docname is {}.".format(doc_name))
+        with open(path + doc_name, 'w') as f:
+            _write(unit_nums)
+            _write(self.ele_size)
+            _write(self.entity.origin)
+            _write(self.entity.side)
+            n = 0
+            for block in list(self.bricks) + list(self.mortas):
+                for unit in block.units:
+                    f.write(str(n) + " ")
+                    f.write(("1" if unit.material == Block.brick else "0") + " ")
+                    _write(_unit_type(unit))
+                    for line in unit.to_stream():
+                        _write(line)
+                    n += 1
+
+    def __repr__(self):
+        return str(self.entity)
 
 
 if __name__ == "__main__":
-    origin = (0, 0, 0)
-    side = (240, 115, 100)
-    bound = Cuboid(origin=origin, side=side)
-    holes = list()
-    hole1 = Cuboid(origin=(15, 15, 0), side=(35, 35, 90))
-    hole2 = Cuboid(origin=(15, 65, 0), side=(35, 35, 90))
-    hole4 = Cuboid(origin=(65, 65, 0), side=(47.5, 35, 90))
-    hole3 = Cuboid(origin=(65, 15, 0), side=(47.5, 35, 90))
-    hole5 = Cuboid(origin=(127.5, 15, 0), side=(47.5, 35, 90))
-    hole6 = Cuboid(origin=(127.5, 65, 0), side=(47.5, 35, 90))
-    hole7 = Cuboid(origin=(190, 15, 0), side=(35, 35, 90))
-    hole8 = Cuboid(origin=(190, 65, 0), side=(35, 35, 90))
-    holes.append(hole1)
-    holes.append(hole2)
-    holes.append(hole3)
-    holes.append(hole4)
-    holes.append(hole5)
-    holes.append(hole6)
-    holes.append(hole7)
-    holes.append(hole8)
-    model = Model(bound=bound, ele_size=10, holes=holes)
-    model.build()
-    figure = Axes3D(plt.figure())
-    model.plot(figure)
-    minx, maxx = figure.get_xlim()
-    miny, maxy = figure.get_ylim()
-    minz, maxz = figure.get_zlim()
-    max_side = max(side)
-    figure.set_xlim(minx, minx + max_side)
-    figure.set_ylim(miny, miny + max_side)
-    figure.set_zlim(minz, minz + max_side)
-    plt.show()
+    with open(r'../output/documents/demo.txt', 'w') as f:
+        f.writelines("12")
+        a = np.array([1, 2])
+        f.writelines(output_wrap(a))

@@ -36,6 +36,34 @@ def rotate_x(points, theta):
     return np.dot(points, rotate_matrix)
 
 
+def rotate(center: np.ndarray, points: np.ndarray, theta: iter):
+    """rotate points by center
+
+    :param center:
+    :param points:
+    :param theta: array_like
+                iter of (theta_xy, theta_xz, theta_yz), means points first rotate theta_xy in xy plane,
+                then rotate theta_xz in xz plane, finally rotate theta_yz in yz plane, counterclockwise
+                is the positive direction
+    :return:
+    """
+    # if len(points.shape) == 1:
+    vec = np.mat(points - center).T
+    theta_xy, theta_xz, theta_yz = theta
+    a = np.mat([[np.cos(theta_xy), -np.sin(theta_xy), 0],
+                [np.sin(theta_xy), np.cos(theta_xy), 0],
+                [0, 0, 1]])
+    b = np.mat([[np.cos(theta_xz), 0, -np.sin(theta_xz)],
+                [0, 1, 0],
+                [np.sin(theta_xz), 0, np.cos(theta_xz)]])
+    c = np.mat([[1, 0, 0],
+                [0, np.cos(theta_yz), -np.sin(theta_yz)],
+                [0, np.sin(theta_yz), np.cos(theta_yz)]])
+    return np.around(np.array(c * b * a * vec).T + center, 5)
+    # else:
+    #     return np.array([rotate(center, point, theta) for point in points])
+
+
 def ridge_renum(mapping, ridge):
     if len(ridge) == 0:
         raise ValueError()
@@ -63,6 +91,7 @@ def continuous_block(a):
 
 
 if __name__ == "__main__":
-    vec1 = np.array([0, -16.7445, 0])
-    vec2 = np.array([0, -3.489, 0])
-    print(angel(vec1, vec2))
+    center = np.array([0, 0, 0])
+    points = np.array([1, 0, 0])
+    points_after_rotate = rotate(center, points, [np.pi / 2, 0, np.pi / 2])
+    print(points_after_rotate)

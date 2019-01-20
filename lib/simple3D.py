@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D, art3d
 import matplotlib.patches as patches
 from matplotlib.path import Path
-from util.math import norm, angel, rotate_x, rotate_z, ridge_renum
+from util.math import norm, angel, rotate_x, rotate_z, ridge_renum, rotate
 from util.util import transform
 
 
@@ -168,25 +168,25 @@ class HalfLine(Line):
 
 class Plane(object):
 
-    def __init__(self, points=None, decimals=5):
+    def __init__(self, verts=None, decimals=5):
         """
         Before construct the plane, this constructor will judge if these points
         1. 3d or not, if not, throw exception;
         2. all in one line or not, if true, throw exception;
         3. all in same plane or not, if not, throw exception;
-        :param points: np.ndarray or None
+        :param verts: np.ndarray or None
         """
-        self.points = points
-        if points is None:
+        self.verts = verts
+        if verts is None:
             self.normal_vector = None
             self.intercept = None
         else:
-            n = points.shape[0]
+            n = verts.shape[0]
             if n < 3:
                 raise ValueError("at least 3 points are needed")
 
-            self.points = np.around(points, decimals=decimals)
-            lines = (self.points - self.points[0])[1:]
+            self.verts = np.around(verts, decimals=decimals)
+            lines = (self.verts - self.verts[0])[1:]
             line0 = lines[0]
             # for line1 in lines[1:]:
             #     if (np.abs(norm(line0) - norm(line1)) < 1e-5).all() or (np.abs(norm(line0) + norm(line1)) < 1e-5).all():
@@ -205,7 +205,7 @@ class Plane(object):
             if list(normal_vector < 0) > list(normal_vector > 0):
                 normal_vector *= -1
             self.normal_vector = normal_vector
-            self.intercept = -np.dot(self.normal_vector, points[0])
+            self.intercept = -np.dot(self.normal_vector, verts[0])
         self.range = np.array([[np.float('-inf'), np.float('inf')],
                                [np.float('-inf'), np.float('inf')],
                                [np.float('-inf'), np.float('inf')]])
@@ -351,21 +351,21 @@ class Plane(object):
 
 
 class FinitePlane(Plane):
-    def __init__(self, points, ridge=None):
+    def __init__(self, verts, ridge=None):
         """A finite plane is the convexhull defined by the input points, ridge here descript the connection relationship between points
 
-        :param points:
+        :param verts:
         :param ridge:
         """
-        super(FinitePlane, self).__init__(points)
+        super(FinitePlane, self).__init__(verts)
         if ridge is None:
-            self.ridge = self._get_ridge(points)
+            self.ridge = self._get_ridge(verts)
         else:
             self.ridge = ridge
             # self.ridge = self._preprocess_ridge(ridge)
-        self.range = np.array([[np.min(points[:, 0]), np.max(points[:, 0])],
-                               [np.min(points[:, 1]), np.max(points[:, 1])],
-                               [np.min(points[:, 2]), np.max(points[:, 2])]])
+        self.range = np.array([[np.min(verts[:, 0]), np.max(verts[:, 0])],
+                               [np.min(verts[:, 1]), np.max(verts[:, 1])],
+                               [np.min(verts[:, 2]), np.max(verts[:, 2])]])
 
     @staticmethod
     def _preprocess_ridge(ridge):
@@ -403,14 +403,14 @@ class FinitePlane(Plane):
     def lines(self):
         for i in range(len(self.ridge)):
             start, end = self.ridge[i], self.ridge[(i + 1) if i < len(self.ridge) - 1 else 0]
-            yield Segment(start_point=self.points[start], end_point=self.points[end])
+            yield Segment(start_point=self.verts[start], end_point=self.verts[end])
 
     def area(self):
         """
         get area of this finite plane
         :return:
         """
-        bound_points = self.points[self.ridge]
+        bound_points = self.verts[self.ridge]
         edge_vectors = (bound_points - bound_points[0])[1:]
 
         area = 0
@@ -429,7 +429,7 @@ class FinitePlane(Plane):
         """
         if len(points.shape) == 1:
             if super(FinitePlane, self).contains(points):
-                midpoint = (self.points[self.ridge[0]] + self.points[self.ridge[1]]) / 2
+                midpoint = (self.verts[self.ridge[0]] + self.verts[self.ridge[1]]) / 2
                 half_line = HalfLine(start_point=points, end_point=midpoint)
                 count = 0
                 for line in self.lines():
@@ -455,7 +455,7 @@ class FinitePlane(Plane):
         figure = Axes3D(plt.figure()) if not figure else figure
         index = list(self.ridge)
         index.append(index[0])
-        verts = self.points[index]
+        verts = self.verts[index]
         super(FinitePlane, self)._plot(verts, figure, **kwargs)
 
 
@@ -480,35 +480,33 @@ class InfinitePlane(Plane):
 
 
 class Polyhedron(object):
-    def __init__(self, points, ridge=None, decimals=5):
+    def __init__(self, verts, ridge=None, decimals=8):
         """
 
-        :param points:
+        :param verts:
         :param ridge:
         """
-        self.points = np.around(points, decimals=decimals)
+        self.verts = np.around(verts, decimals=decimals)
         if ridge is None:
             self.ridge = self._get_ridge()
         else:
             self.ridge = ridge
         # self.volume, self.center = Polyhedron.get_centroid(points)
-        self.range = np.around(np.array([[np.min(points[:, 0]), np.max(points[:, 0])],
-                                         [np.min(points[:, 1]), np.max(points[:, 1])],
-                                         [np.min(points[:, 2]), np.max(points[:, 2])]]), decimals=decimals)
+        self.range = np.c_[np.min(verts, 0), np.max(verts, 0)]
 
     def _get_ridge(self):
-        if self.points.shape[1] != 3:
+        if self.verts.shape[1] != 3:
             raise ValueError("only 3d points are accepted")
 
         hull = None
         try:
-            hull = ConvexHull(self.points)
+            hull = ConvexHull(self.verts)
         except Exception:
-            print(self.points)
+            print(self.verts)
 
         plane_feature_dic = dict()  # key值为平面的法向量及常数项构成的集合，value为{ points }中属于该平面上的点的索引
         for simplice in hull.simplices:
-            curr_plane = Plane(self.points[simplice])
+            curr_plane = Plane(self.verts[simplice])
             feature = str(curr_plane)
             plane_feature_dic.setdefault(feature, set())
             plane_feature_dic[feature] |= set(simplice)
@@ -517,7 +515,7 @@ class Polyhedron(object):
         for feature in plane_feature_dic:
             simplice = list(plane_feature_dic[feature])
             try:
-                curr_plane = FinitePlane(self.points[simplice])
+                curr_plane = FinitePlane(self.verts[simplice])
                 ridge.append([simplice[r] for r in curr_plane.ridge])
             except ValueError:
                 raise ValueError("unknown error, the plane may be {}, please check the points".format(feature))
@@ -525,7 +523,7 @@ class Polyhedron(object):
         return ridge
 
     def _decre_ridge(self):
-        n = np.size(self.points, 0)
+        n = np.size(self.verts, 0)
         points_connection = [[False] * n for _ in range(n)]
         for r in self.ridge:
             for i in range(len(r)):
@@ -536,10 +534,10 @@ class Polyhedron(object):
                     points_connection[minr][maxr] = True
 
     def volume(self):
-        tetras = Delaunay(self.points)  # compute set of elementary tetrahedra
+        tetras = Delaunay(self.verts)  # compute set of elementary tetrahedra
         vt = 0
         for simplic in tetras.simplices:
-            tetra = self.points[simplic]
+            tetra = self.verts[simplic]
             vol = np.abs(np.linalg.det(tetra[0:3, :] - tetra[3, :]) / 6)
             vt += vol
         return vt
@@ -551,11 +549,11 @@ class Polyhedron(object):
         :return:
         """
         try:
-            tetras = Delaunay(self.points)  # compute set of elementary tetrahedra
+            tetras = Delaunay(self.verts)  # compute set of elementary tetrahedra
             centroid = np.array([0, 0, 0], dtype="float64")
             vt = 0
             for simplic in tetras.simplices:
-                tetra = self.points[simplic]
+                tetra = self.verts[simplic]
                 centi = np.mean(tetra, 0)
                 vol = np.abs(np.linalg.det(tetra[0:3, :] - tetra[3, :]) / 6)
                 centroid += centi * vol
@@ -563,10 +561,17 @@ class Polyhedron(object):
             centroid /= vt
             return centroid
         except Exception:
-            raise ValueError("check points:\n{}".format(self.points))
+            raise ValueError("check points:\n{}".format(self.verts))
 
     def contains(self, point):
         pass  # TODO
+
+    def pan(self, vector: iter):
+        if not isinstance(vector, np.ndarray):
+            vector = np.array(list(vector), dtype=np.float)
+        self.verts += vector
+        self.range = (self.range.T + vector).T
+        return self
 
     def planes(self):
         """
@@ -575,7 +580,11 @@ class Polyhedron(object):
         """
         for r in self.ridge:
             ridge = list(range(len(r)))
-            yield FinitePlane(self.points[r], ridge)
+            yield FinitePlane(self.verts[r], ridge)
+
+    def rotate(self, centroid, theta):
+        self.verts = rotate(center=centroid, points=self.verts, theta=theta)
+        self.range = np.c_[np.min(self.verts, 0), np.max(self.verts, 0)]
 
     def _possible_intersect(self, plane: Plane):
         b, corr_axis = plane.parallel_with_axis()
@@ -593,7 +602,7 @@ class Polyhedron(object):
         points = list()
         key = list()
         for r in self.ridge:
-            plane = FinitePlane(self.points[r], list(range(len(r))))
+            plane = FinitePlane(self.verts[r], list(range(len(r))))
             point = plane.intersect(line=line)
             if point is not None:
                 points.append(list(point))
@@ -604,7 +613,7 @@ class Polyhedron(object):
 
     def _intersect_plane(self, plane: Plane, dis_array=None, return_key=False):
         if dis_array is None:
-            dis_array = np.around(plane.dis_to(self.points), 5)
+            dis_array = np.around(plane.dis_to(self.verts), 5)
         if np.all(dis_array >= 0) or np.all(dis_array <= 0):
             return np.array([])
         # intersect_points = [list(e) for e in self.points[dis_array == 0] if plane.contains(e)]
@@ -612,8 +621,8 @@ class Polyhedron(object):
         key = list()
         for start, end in self._decre_ridge():
             if dis_array[start] * dis_array[end] < 0:
-                vector = self.points[end] - self.points[start]
-                intersect_point = self.points[start] + vector * abs(dis_array[start]) / \
+                vector = self.verts[end] - self.verts[start]
+                intersect_point = self.verts[start] + vector * abs(dis_array[start]) / \
                                   (abs(dis_array[start]) + abs(dis_array[end]))
                 if plane.contains(intersect_point):
                     intersect_points.append(list(intersect_point))
@@ -641,17 +650,17 @@ class Polyhedron(object):
         :param plane:
         :return:
         """
-        dis_array = np.around(plane.dis_to(self.points), 5)
+        dis_array = np.around(plane.dis_to(self.verts), 5)
         if np.all(dis_array >= 0):
             return self, None
         elif np.all(dis_array <= 0):
             return None, self
         else:
-            above_points = self.points[dis_array > 0]
-            down_points = self.points[dis_array < 0]
+            above_points = self.verts[dis_array > 0]
+            down_points = self.verts[dis_array < 0]
             intersect_points, key = self._intersect_plane(plane, dis_array=dis_array, return_key=True)
 
-            n = self.points.shape[0]
+            n = self.verts.shape[0]
             mapping = dict(zip(key, list(range(n, n + len(key)))))
             # try:
             #     index = 0
@@ -724,6 +733,15 @@ class Polyhedron(object):
         for plane in self.planes():
             plane.plot(figure=fig, **kwargs)
 
+    def to_stream(self):
+        lines = list()
+        lines.append(self.centroid())
+        lines.append(self.verts.shape[0])
+        lines += list(self.verts)
+        lines.append(len(self.ridge))
+        lines += list(self.ridge)
+        return lines
+
 
 if __name__ == '__main__':
     points = np.array([[50.93043, 56.38548, 69.67531],
@@ -733,7 +751,7 @@ if __name__ == '__main__':
                        [67.38912, 64.16193, 90.0],
                        [54.22034, 60.54667, 90.0]])
     ridge = [0, 1, 2, 3, 4, 5]
-    plane = FinitePlane(points=points, ridge=ridge)
+    plane = FinitePlane(verts=points, ridge=ridge)
     line = Segment(start_point=(50, 50, 0), end_point=(50, 50, 90))
     ax1 = plt.subplot2grid((1, 2), (0, 0), projection="3d")
     ax2 = plt.subplot2grid((1, 2), (0, 1), projection="3d")

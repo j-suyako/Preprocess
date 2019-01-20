@@ -1,39 +1,68 @@
-from common import Unit, Cuboid, Model
+from common import Unit, Cuboid, Block, Model
 from lib.simple3D import *
-from util.logging import logging
+from threading import Thread, Semaphore
+
+
+OPTION = {"standard": {"pan": [[(0, 0, 0)]],
+                       "rotate": [[None]],
+                       "size": 5},  # one standard brick, no pan, no rotate
+
+          "nine-brick": {"pan": [[(0, 0, 0), (0, 125, 0), (187.5, 62.5, 0)],
+                                 [(125, 0, 100), (125, 125, 100), (-62.5, 62.5, 100)],
+                                 [(0, 0, 200), (0, 125, 200), (187.5, 62.5, 200)]],
+                         "rotate": [[None, None, "pos_xy"],
+                                    [None, None, "pos_xy"],
+                                    [None, None, "pos_xy"]],
+                         "size": 5},  # nine standard brick
+
+          "demo": {"pan": [[(0, 0, 0)],
+                           [(0, 0, 100)]],
+                   "rotate": [[None],
+                              [None]],
+                   "size": 5},  # two standard brick, align in z axis
+
+          "vector-nine-brick": {"pan": [[(0, 0, 0), (0, 125, 0), (187.5, 62.5, 0)],
+                                        [(125, 0, 100), (125, 125, 100), (-62.5, 62.5, 100)],
+                                        [(0, 0, 200), (0, 125, 200), (187.5, 62.5, 200)]],
+                                "rotate": [[None, None, "pos_xy"],
+                                           [None, None, "pos_xy"],
+                                           [None, None, "pos_xy"]],
+                                "size": 5,
+                                "integer-rotate": "neg_xz"}
+          }
+IMAGE = True
+IMAGE_PATH = r'./output/pictures/'
+IMAGE_SHOW = False  # it seems that plt.show() only works in main thread, so it may turn off show temporary
+DOCUMENTATION = True
+DOCUMENTATION_PATH = r'./output/documents/'
+
+
+def plot_work(model: Model, sema: Semaphore):
+    model.plot(path=IMAGE_PATH)
+    sema.release()
+    # if IMAGE_SHOW:
+    #     LOGGER.debug("start show image in screen, that may take a while")
+    #     plt.show()
+
+
+def output_work(model: Model):
+    model.output(path=DOCUMENTATION_PATH)
+
 
 if __name__ == "__main__":
-    origin = (0, 0, 0)
-    side = (240, 115, 100)
-    bound = Cuboid(origin=origin, side=side)
-    holes = list()
-    hole1 = Cuboid(origin=(15, 15, 0), side=(35, 35, 90))
-    hole2 = Cuboid(origin=(15, 65, 0), side=(35, 35, 90))
-    hole4 = Cuboid(origin=(65, 65, 0), side=(47.5, 35, 90))
-    hole3 = Cuboid(origin=(65, 15, 0), side=(47.5, 35, 90))
-    hole5 = Cuboid(origin=(127.5, 15, 0), side=(47.5, 35, 90))
-    hole6 = Cuboid(origin=(127.5, 65, 0), side=(47.5, 35, 90))
-    hole7 = Cuboid(origin=(190, 15, 0), side=(35, 35, 90))
-    hole8 = Cuboid(origin=(190, 65, 0), side=(35, 35, 90))
-    holes.append(hole1)
-    holes.append(hole2)
-    holes.append(hole3)
-    holes.append(hole4)
-    holes.append(hole5)
-    holes.append(hole6)
-    holes.append(hole7)
-    holes.append(hole8)
-    model = Model(bound=bound, ele_size=10, holes=holes)
-    model.build()
-    model.assign(regions=[Cuboid(origin=(0, 0, 0), side=(240, 115, 90))], material=Unit.brick)
-    model.assign(regions="remain", material=Unit.mortar)
-    figure = Axes3D(plt.figure())
-    model.plot(figure)
-    minx, maxx = figure.get_xlim()
-    miny, maxy = figure.get_ylim()
-    minz, maxz = figure.get_zlim()
-    max_side = max(side)
-    figure.set_xlim(minx, minx + max_side)
-    figure.set_ylim(miny, miny + max_side)
-    figure.set_zlim(minz, minz + max_side)
-    plt.show()
+    LOGGER.info("start preprocessing...")
+    model = Model(OPTION["vector-nine-brick"])
+    model.build(pin=True)
+    sema = Semaphore(0)
+    plt.figure(figsize=(20, 15))
+    if IMAGE:
+        plot_task = Thread(target=plot_work, args=(model, sema))
+        plot_task.start()
+    if DOCUMENTATION:
+        output_task = Thread(target=output_work, args=(model, ))
+        output_task.start()
+    LOGGER.info("preprocessing finished, plotting and outputing task is on the background, "
+                "the final time is depend on the size of model.")
+    if IMAGE_SHOW:
+        sema.acquire()
+        plt.show()
