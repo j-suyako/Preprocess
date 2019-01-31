@@ -35,22 +35,26 @@ class Block(Cuboid):
         self.holes = holes
         self.material = material
 
-    def initial(self, points=None):
-        super(Block, self).initial(points)
+    def initial(self, points=None, separation=True):
+        if separation:
+            super(Block, self).initial(points)
+        else:
+            self.points = super(Block, self)._points_initial()
+            self._update()
         # LOGGER.info("{} has {} points.".format(self, self.points.shape[0]))
-        return self
+        # return self
 
     # @logging("dividing")
     def _divide(self):
         # LOGGER.info("start dividing...")
-        # index = np.argwhere(self.holes[0].side == self.side)[0][0]
+        index = np.argwhere(self.holes[0].side == self.side)[0][0]
         diagonal_point = self.origin + self.side
-        # p, q = {0, 1, 2} - {index}
-        x, y = [self.origin[0], diagonal_point[0]], [self.origin[1], diagonal_point[1]]
+        p, q = {0, 1, 2} - {index}
+        x, y = [self.origin[p], diagonal_point[p]], [self.origin[q], diagonal_point[q]]
         hole_set = set()
         for hole in self.holes:
-            minx, miny, _ = hole.origin
-            maxx, maxy, _ = hole.origin + hole.side
+            minx, miny = hole.origin[[p, q]]
+            maxx, maxy = (hole.origin + hole.side)[[p, q]]
             x.extend([minx, maxx])
             y.extend([miny, maxy])
             hole_set.add(tuple(hole.origin))
@@ -59,20 +63,20 @@ class Block(Cuboid):
 
         # LOGGER.info("Expected to be divided {} into {} cuboids.".format(self, (len(x) - 1) * (len(y) - 1)))
 
-        # C = list()
-        # for j in range(len(y) - 1):
-        #     C.append([])
-        #     for i in range(len(x) - 1):
-        #         origin = [x[i], y[j]]
-        #         origin.insert(index, self.origin[index])
-        #         side = [x[i + 1] - x[i], y[j + 1] - y[j]]
-        #         side.insert(index, self.side[index])
-        #         C[j].append(Cuboid(origin=tuple(origin), side=tuple(side), ele_size=self.ele_size).initial())
+        C = list()
+        for j in range(len(y) - 1):
+            C.append([])
+            for i in range(len(x) - 1):
+                origin = [x[i], y[j]]
+                origin.insert(index, self.origin[index])
+                side = [x[i + 1] - x[i], y[j + 1] - y[j]]
+                side.insert(index, self.side[index])
+                C[j].append(Cuboid(origin=tuple(origin), side=tuple(side), ele_size=self.ele_size).initial())
 
-        C = [[Cuboid(origin=(x[i], y[j], self.origin[2]),
-                     side=(x[i + 1] - x[i], y[j + 1] - y[j], self.side[2]),
-                     ele_size=self.ele_size).initial() for i in range(len(x) - 1)]
-             for j in range(len(y) - 1)]
+        # C = [[Cuboid(origin=(x[i], y[j], self.origin[2]),
+        #              side=(x[i + 1] - x[i], y[j + 1] - y[j], self.side[2]),
+        #              ele_size=self.ele_size).initial() for i in range(len(x) - 1)]
+        #      for j in range(len(y) - 1)]
 
         for j in range(len(y) - 1):
             for i in range(len(x) - 1):
@@ -87,7 +91,10 @@ class Block(Cuboid):
         return np.concatenate(points)
 
     def _bound_points_initial(self):
-        points = self._divide()
+        if self.holes is not None:
+            points = self._divide()
+        else:
+            points = super(Block, self)._points_initial()
         nx, ny, nz = np.ceil(self.side / self.ele_size)
         dx, dy, dz = [e[0] / e[1] for e in zip(self.side, [nx, ny, nz])]
         temp = (points - self.origin) / np.array([dx, dy, dz])
@@ -105,18 +112,27 @@ class Block(Cuboid):
         bound = Cuboid(origin=self.origin + 1.5 * self.ele_size, side=self.side - 3 * self.ele_size)
         holes = None
         if self.holes is not None:
+            index = np.argwhere(self.holes[0].side == self.side)[0][0]
             holes = list()
             for hole in self.holes:
-                origin = hole.origin + np.array([0, 0, 1.5 * self.ele_size])
-                # origin = hole.origin + 1.5 * self.ele_size
-                side = hole.side - np.array([0, 0, 3 * self.ele_size])
-                # side = hole.side - 3 * self.ele_size
+                pan = np.zeros(3)
+                pan[index] = 1.5 * self.ele_size
+                origin = hole.origin + pan
+                # origin = hole.origin + np.array([0, 0, 1.5 * self.ele_size])
+                side = hole.side - 2 * pan
+                # side = hole.side - np.array([0, 0, 3 * self.ele_size])
                 holes.append(Cuboid(origin=origin, side=side))
         inner_block = Block(bound=bound, holes=holes, ele_size=2 * self.ele_size)
-        return inner_block._divide()
+        if inner_block.holes is not None:
+            return inner_block._divide()
+        else:
+            return super(Block, inner_block)._points_initial()
 
     def _points_initial(self):
-        return np.concatenate((self._bound_points_initial(), self._inner_points_initial()))
+        # if self.holes is None:
+        #     return super(Block, self)._points_initial()
+        # else:
+            return np.concatenate((self._bound_points_initial(), self._inner_points_initial()))
 
     def pan(self, vector):
         super(Block, self).pan(vector)

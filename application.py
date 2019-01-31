@@ -5,7 +5,7 @@ from threading import Thread, Semaphore
 
 OPTION = {"standard": {"pan": [[(0, 0, 0)]],
                        "rotate": [[None]],
-                       "size": 5},  # one standard brick, no pan, no rotate
+                       "size": 10},  # one standard brick, no pan, no rotate
 
           "nine-brick": {"pan": [[(0, 0, 0), (0, 125, 0), (187.5, 62.5, 0)],
                                  [(125, 0, 100), (125, 125, 100), (-62.5, 62.5, 100)],
@@ -51,7 +51,7 @@ def output_work(model: Model):
 
 if __name__ == "__main__":
     LOGGER.info("start preprocessing...")
-    model = Model(OPTION["vector-nine-brick"])
+    model = Model(OPTION["standard"])
     model.build(pin=True)
     sema = Semaphore(0)
     plt.figure(figsize=(20, 15))

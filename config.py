@@ -25,8 +25,3 @@ class Logger(object):
 
 
 LOGGER = Logger("mylog", "application").getLogger()
-
-
-if __name__ == "__main__":
-    LOGGER.debug('testing...')
-    LOGGER.info('testing...')

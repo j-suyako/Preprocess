@@ -25,7 +25,11 @@ def output_wrap(e):
     return res + "\n"
 
 
-class Model(object):
+def build_cube_70(ele_size):
+    return Block(bound=Cuboid(origin=(0, 0, 0), side=(70.7, 70.7, 70.7)), holes=None, ele_size=ele_size)
+
+
+def build_cpb24_1(ele_size):
     hole_origins = np.array([[15, 15, 0], [15, 65, 0],
                              [65, 15, 0], [65, 65, 0],
                              [127.5, 15, 0], [127.5, 65, 0],
@@ -34,14 +38,20 @@ class Model(object):
                            [47.5, 35, 90], [47.5, 35, 90],
                            [47.5, 35, 90], [47.5, 35, 90],
                            [35, 35, 90], [35, 35, 90]])
+    holes = [Cuboid(origin=origin, side=side) for origin, side in zip(hole_origins, hole_sides)]
+    return Block(bound=Cuboid(origin=(0, 0, 0), side=(240, 115, 90)), holes=holes, ele_size=ele_size)
 
+
+class Model(object):
     @staticmethod
     def standard_brick(pan_vector=(0, 0, 0), direction: str=None, ele_size=5):
-        holes = [Cuboid(origin=Model.hole_origins[i] + pan_vector, side=Model.hole_sides[i])
-                 for i in range(Model.hole_origins.shape[0])]
-        brick = Block(bound=Cuboid(origin=pan_vector, side=(240, 115, 90)), holes=holes, ele_size=ele_size)
-        brick.initial()
+        # holes = [Cuboid(origin=Model.hole_origins[i] + pan_vector, side=Model.hole_sides[i])
+        #          for i in range(Model.hole_origins.shape[0])]
+        # brick = Block(bound=Cuboid(origin=pan_vector, side=(240, 115, 90)), holes=holes, ele_size=ele_size)
+        brick = build_cube_70(ele_size=ele_size)
+        brick.pan(pan_vector)
         brick.rotate(brick.centroid(), direction)
+        brick.initial(separation=False)
         return brick
 
     def __init__(self, condition: dict):
@@ -129,10 +139,10 @@ class Model(object):
         with futures.ProcessPoolExecutor() as pool:
             self.bricks = list(pool.map(Block.build, self.bricks))
             self.mortas = list(pool.map(Block.build, self.mortas))
-        zlist, index = None, np.argwhere(self.bricks[0].holes[0].side == self.bricks[0].side)[0][0]
+        zlist, index = None, 2
         if pin:
             zlist = set()
-            # index = np.argmin(self.mortas[-self.layers + 1].side) if len(self.mortas) > 0 else 2
+            index = np.argmin(self.mortas[-self.layers + 1].side) if len(self.mortas) > 0 else 2
             for morta in self.mortas[-self.layers + 1:]:
                 zlist.add(morta.origin[index])
                 zlist.add(morta.origin[index] + morta.side[index])
@@ -197,20 +207,21 @@ class Model(object):
                    "--eleNum-" + str(unit_nums) + "--" + \
                    time.strftime('%Y%m%d', time.localtime(time.time())) + ".txt"
         LOGGER.debug("docname is {}.".format(doc_name))
+        units = list()
+        for block in list(self.bricks) + list(self.mortas):
+            units.extend(block.units)
+        np.random.shuffle(units)
         with open(path + doc_name, 'w') as f:
             _write(unit_nums)
             _write(self.ele_size)
             _write(self.entity.origin)
             _write(self.entity.side)
-            n = 0
-            for block in list(self.bricks) + list(self.mortas):
-                for unit in block.units:
-                    f.write(str(n) + " ")
-                    f.write(("1" if unit.material == Block.brick else "0") + " ")
-                    _write(_unit_type(unit))
-                    for line in unit.to_stream():
-                        _write(line)
-                    n += 1
+            for n, unit in enumerate(units):
+                f.write(str(n) + " ")
+                f.write(("1" if unit.material == Block.brick else "0") + " ")
+                _write(_unit_type(unit))
+                for line in unit.to_stream():
+                    _write(line)
 
     def __repr__(self):
         return str(self.entity)
